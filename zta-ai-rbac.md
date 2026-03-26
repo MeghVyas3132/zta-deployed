@@ -1,6 +1,8 @@
-# ZTA-AI — Role-Based & Attribute-Based Access Control
+# ZTA-AI — Role-Based & Attribute-Based Access Control (SLM-Strict)
 
 **// RBAC + ABAC — Multi-Role Isolation Engine**
+
+**Note**: The SLM is **fundamentally untrusted** and receives only pre-approved, sanitized claim payloads. All access control decisions are made by the **Policy Engine** in the trusted layer before any data reaches the SLM.
 
 ---
 
@@ -257,7 +259,7 @@
 
 ## 05 — Verified Session Token Passed to Interpreter
 
-**EVERY PROMPT CARRIES THIS SIGNED TOKEN — INTERPRETER READS AND ENFORCES IT**
+**EVERY PROMPT CARRIES THIS SIGNED TOKEN — POLICY ENGINE READS AND ENFORCES IT BEFORE SLM RECEIVES ANY DATA**
 
 ### JWT Payload
 ```json
@@ -280,32 +282,40 @@
 }
 ```
 
-> **Note:** Token is verified on EVERY request. Interpreter reads `allowed_domains`, `denied_domains`, and `masked_fields` before the prompt ever reaches the LLM.
+> **Note:** Token is verified on EVERY request. Policy Engine reads `allowed_domains`, `denied_domains`, and `masked_fields` before claims are filtered through the Context Governance Layer. The SLM receives only pre-approved, sanitized claim payloads — never raw data or schemas.
 
 ---
 
-## 06 — Data Silos Enforced by Interpreter
+## 06 — Data Silos Enforced by Policy Engine + Context Governance
+
+**All silos are enforced BEFORE the SLM receives any data. SLM has no knowledge of these boundaries.**
 
 ### HR Silo
 *   **Scope**: people_db, leave_db, performance_db, recruitment_db
 *   **Barrier**: DEPT=HR ONLY
+*   **SLM receives**: Sanitized claims only
 
 ### Finance Silo
 *   **Scope**: revenue_db, payroll_db, accounts_db, tax_db
 *   **Barrier**: DEPT=FINANCE ONLY
+*   **SLM receives**: Aggregated, masked claims
 
 ### Engineering Silo
 *   **Scope**: code_repos, infra_config, deploy_logs, issue_tracker
 *   **Barrier**: DEPT=ENGINEERING ONLY
+*   **SLM receives**: Aliased, filtered claims
 
 ### Legal Silo
 *   **Scope**: contracts_db, compliance_db, ip_registry, regulatory_db
 *   **Barrier**: DEPT=LEGAL ONLY
+*   **SLM receives**: Redacted claims with privilege markers
 
 ### Ops Silo
 *   **Scope**: inventory_db, vendor_db, logistics_db, sla_db
 *   **Barrier**: DEPT=OPS ONLY
+*   **SLM receives**: Operational claims only
 
 ### Exec View
 *   **Scope**: aggregated dashboards, KPI reports, no raw rows
 *   **Barrier**: AGGREGATED ONLY
+*   **SLM receives**: Summary claims with no individual-level data

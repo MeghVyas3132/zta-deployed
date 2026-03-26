@@ -1,27 +1,39 @@
-# ZTA-AI — Complete Explainer
+# ZTA-AI — Complete Explainer (SLM-Strict)
 **Secure Enterprise AI Platform with Zero Trust Data Isolation**
 
 ---
 
-## 01 — The Core Idea: The AI is Kept Blind
+## 01 — The Core Idea: The AI is Kept Blind and Sandboxed
 
-Most companies are hesitant to use internal AI because an assistant connected to a database could accidentally expose sensitive information. ZTA-AI solves this by keeping the AI (the LLM) completely isolated from the raw data.
+Most companies are hesitant to use internal AI because an assistant connected to a database could accidentally expose sensitive information. ZTA-AI solves this by keeping the Small Language Model (SLM) **completely isolated from raw data** and treating it as **fundamentally untrusted**.
+
+### The SLM MUST NEVER:
+* Access databases (directly or indirectly)
+* See raw company data or schemas
+* Decide what data to retrieve
+* Execute business logic or computations
+* Call tools, APIs, or functions
+* Maintain memory or state across requests
 
 ### The Request Lifecycle
 1.  **Employee types a question**: e.g., "What is our current NPL ratio by branch?"
-2.  **Zero Trust Gate**: Every request re-verifies identity, role, and device posture.
-3.  **Interpreter**: Strips injections and replaces real table names with abstract aliases (e.g., `loans_2024` → `source_A`).
-4.  **LLM Engine**: Receives only the abstract intent. It performs reasoning without ever seeing the database schema or raw data.
-5.  **Compiler**: Translates the abstract logic back into a safe, parameterized SQL query in a trusted zone.
-6.  **Encrypted Database**: The real query runs. Results are re-aliased before being passed back to the AI.
-7.  **LLM Formatting**: The AI takes the masked results and writes a friendly, natural language answer.
-8.  **Employee receives response**: A clean, natural language answer with a full, tamper-proof audit trail.
+2.  **Zero Trust Gate**: Every request re-verifies identity, role, device posture, and applies RBAC+ABAC.
+3.  **Interpreter**: Deterministic intent parsing — converts natural language to structured intent. No SLM usage. Replaces real names with aliases.
+4.  **Compiler (Control Plane)**: Central authority — creates execution plan, enforces policies, orchestrates downstream components.
+5.  **Policy Engine**: Evaluates RBAC/ABAC rules, applies compliance constraints (GDPR, DPDP, AML).
+6.  **Tool / Function Layer**: Controlled data access via strictly defined APIs — no dynamic queries.
+7.  **Claim Engine**: Retrieves immutable, versioned claims with provenance and compliance tags.
+8.  **Context Governance**: Filters, redacts, and minimizes claims based on access scope. Prevents inference attacks.
+9.  **SLM Runtime (Sandboxed)**: Receives ONLY pre-approved, sanitized claims. Converts structured data → structured JSON output.
+10. **Output Validation**: Validates output against input claims, detects hallucinations, enforces schema compliance.
+11. **Response Renderer**: Formats for UI delivery.
+12. **Employee receives response**: A clean, structured response with a full, tamper-proof audit trail.
 
 ---
 
 ## 02 — RBAC / ABAC: Access Control
 
-Every query is attached to a signed JWT token ("digital badge") that defines exactly what data the user can access.
+Every query is attached to a signed JWT token ("digital badge") that defines exactly what data the user can access. **All access control is enforced BEFORE the SLM receives any data.**
 
 ### Role-Based Access Control (RBAC)
 *   **HR Manager**: Access to salaries, leave, and performance. No access to revenue or source code.
@@ -34,6 +46,8 @@ Every query is attached to a signed JWT token ("digital badge") that defines exa
 *   **Location**: Sensitive data access requires a corporate network or VPN.
 *   **Sensitivity**: Fields like SSN or bank accounts are always masked for analyst roles.
 *   **Anomaly**: Rapid querying of sensitive data triggers automatic session revocation.
+
+**The SLM receives only sanitized claims that have already passed through the Policy Engine and Context Governance Layer.**
 
 ---
 
@@ -50,6 +64,9 @@ ZTA-AI connects to virtually any enterprise data source through three main paths
 *   **SaaS Tools**: Slack, Jira, Salesforce, SAP, Microsoft 365, Google Workspace.
 *   **Files**: PDF, Excel/CSV, Word, JSON/XML.
 
+### Data Flow (Claim-Based Architecture)
+All data is converted to **immutable, versioned claims** with provenance, sensitivity classification, and compliance tags. The SLM never sees raw data — only pre-approved, sanitized claims filtered by the Context Governance Layer.
+
 ---
 
 ## 04 — Market Scope & Opportunity
@@ -57,10 +74,10 @@ ZTA-AI connects to virtually any enterprise data source through three main paths
 ZTA-AI addresses a $133B combined market of Conversational AI and Zero Trust Security.
 
 ### Target Verticals
-1.  **BFSI**: Banks and fintechs (Highest priority due to RBI/SEBI compliance).
-2.  **Healthcare**: HIPAA-compliant patient/billing data isolation.
-3.  **Government**: NSA Zero Trust mandates and on-prem requirements.
-4.  **Legal**: Attorney-client privilege and matter-level silos.
+1.  **BFSI**: Banks and fintechs (Highest priority due to RBI/SEBI compliance). Sandboxed SLM addresses data leak fears.
+2.  **Healthcare**: HIPAA-compliant patient/billing data isolation. Output validation prevents hallucinated medical info.
+3.  **Government**: NSA Zero Trust mandates and on-prem requirements. Deterministic architecture for auditability.
+4.  **Legal**: Attorney-client privilege and matter-level silos. SLM has no memory across requests.
 
 ### Pricing Model
 *   **Starter ($199/mo)**: Up to 50 users, 2 sources.
@@ -71,12 +88,30 @@ ZTA-AI addresses a $133B combined market of Conversational AI and Zero Trust Sec
 
 ## 05 — BFSI Strategy: Starting with Banking
 
-Banks have the highest willingness to pay and the strictest regulatory requirements (RBI FREE-AI 2025, DPDP Act 2023).
+Banks have the highest willingness to pay and the strictest regulatory requirements (RBI FREE-AI 2025, DPDP Act 2023). ZTA-AI's **sandboxed SLM with no tool/function access** directly addresses their concerns about AI data leakage.
 
 ### Internal Use Cases
-*   **Risk Analyst**: Querying NPL ratios across branches.
-*   **Compliance Officer**: Detecting AML threshold breaches.
-*   **Treasury Desk**: Monitoring ALM gaps and SLR/CRR concerns.
+*   **Risk Analyst**: Querying NPL ratios across branches — SLM receives pre-approved claims only.
+*   **Compliance Officer**: Detecting AML threshold breaches — SLM outputs validated against input claims.
+*   **Treasury Desk**: Monitoring ALM gaps and SLR/CRR concerns — SLM has no access to raw treasury data.
 
 ### Sales Strategy
-The pitch focuses on cost-efficiency (e.g., ₹50L/year for ZTA-AI vs. ₹90L/year for 3 analysts) and guaranteed compliance. The roadmap targets NBFCs and fintechs first, moving upstream to private and public banks.
+The pitch focuses on **SLM sandboxing** (no tools, no memory, no decisions), **deterministic architecture** with full audit trails, and guaranteed compliance. The roadmap targets NBFCs and fintechs first, moving upstream to private and public banks.
+
+---
+
+## 06 — Key Differentiator
+
+ZTA-AI does not treat AI as a system authority.
+
+> **AI is not part of the trust boundary.**
+> **AI is a stateless, sandboxed rendering layer over a deterministic system.**
+
+The SLM:
+* Has no tool or function access
+* Has no memory or state across requests
+* Receives only pre-approved, structured claims
+* Outputs structured JSON validated against input claims
+* Runs in an isolated container with no network access to internal systems
+
+This architecture ensures **enterprise-grade security, regulatory compliance, and production reliability** without relying on AI for critical system behavior.

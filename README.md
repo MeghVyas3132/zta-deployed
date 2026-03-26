@@ -1,4 +1,4 @@
-# ZTA-AI: Zero Trust Architecture AI System
+# ZTA-AI: Zero Trust Architecture AI System (SLM-Strict)
 
 **Secure Enterprise AI Platform with Zero Trust Data Isolation**
 
@@ -8,9 +8,9 @@
 
 ## Overview
 
-ZTA-AI is a production-grade enterprise AI system that enables natural language querying of company-internal data while maintaining absolute zero-trust principles at the LLM layer. The platform ensures that no raw data, schemas, or credentials are ever exposed to the language model -- making it the only AI assistant built from the ground up for regulated industries.
+ZTA-AI is a **production-grade, deterministic, policy-driven data access platform** that enables natural language querying of company-internal data while enforcing **strict Zero Trust principles**. The platform uses a **sandboxed Small Language Model (SLM)** strictly for presentation — ensuring that no raw data, schemas, credentials, or decision logic are ever exposed to the model layer.
 
-**Core Innovation:** Complete separation of data access, business logic, and natural language generation. The LLM functions exclusively as a presentation layer, not a decision-making layer.
+**Core Innovation:** Complete separation of data access, business logic, and natural language generation. The SLM operates as a **stateless, sandboxed rendering component** with no decision-making authority, no tool/function access, and no memory across requests.
 
 ---
 
@@ -20,7 +20,7 @@ This repository hosts the interactive documentation and specification pages for 
 
 | Page | Description |
 |------|-------------|
-| [System Architecture](zta-ai-architecture.html) | Full layered architecture -- client, zero trust gate, interpreter, LLM engine, compiler, and encrypted data store |
+| [System Architecture](zta-ai-architecture.html) | Full layered architecture -- client, zero trust gate, interpreter, compiler, policy engine, claim engine, and sandboxed SLM |
 | [RBAC / ABAC Access Control](zta-ai-rbac.html) | Role-based and attribute-based access control engine with department-level data silos |
 | [Data Integration Layer](zta-ai-integration.html) | Universal connector architecture -- databases, cloud storage, SaaS tools, and file uploads |
 | [Market Scope and Opportunity](zta-ai-market-scope.html) | Market analysis, TAM/SAM/SOM breakdown, competitive landscape, and pricing model |
@@ -30,9 +30,11 @@ This repository hosts the interactive documentation and specification pages for 
 
 ## Key Capabilities
 
-- **Zero Trust LLM Boundary** -- The language model has zero knowledge of database schemas, table names, or raw data. It receives only pre-approved, abstracted claim payloads.
+- **Zero Trust SLM Boundary** -- The Small Language Model is fundamentally untrusted and fully sandboxed. It receives only pre-approved, structured claim payloads — no database access, no tool calling, no memory.
+- **Claim-Based Data Model** -- All data is represented as immutable, versioned claims with full provenance, sensitivity classification, and compliance tags.
 - **RBAC + ABAC Enforcement** -- Department-level data silos with attribute-based dynamic conditions (time, location, sensitivity, anomaly detection).
-- **Universal Connector Layer** -- No-code UI, SDK/API, and on-prem agent paths for connecting any data source.
+- **Context Governance Layer** -- Data minimization, redaction, and sanitization before any model interaction.
+- **Output Validation** -- All SLM outputs are validated against input claims to detect hallucinations and ensure schema compliance.
 - **Immutable Audit Trail** -- Every query, policy decision, and data access event is logged with full traceability.
 - **Multi-Tenant SaaS Architecture** -- Org-level isolation with support for on-premises deployment.
 - **Sub-Second Response Times** -- p95 latency under 500ms for the deterministic pipeline.
@@ -41,12 +43,14 @@ This repository hosts the interactive documentation and specification pages for 
 
 ## Architecture Principles
 
-1. **Zero Trust LLM Boundary** -- The LLM is fundamentally untrusted. It never queries databases, decides what data to fetch, or sees raw company data.
-2. **Claim-Based Truth Model** -- All company data is represented as immutable, versioned claims with full provenance tracking.
-3. **Deterministic Decision Making** -- Every decision outside the LLM layer is deterministic and testable.
-4. **Separation of Trust Boundaries** -- Strict network and logical isolation between trusted (data) and untrusted (LLM) zones.
-5. **Fail-Safe Degradation** -- System degrades gracefully without compromising security.
-6. **Auditability First** -- Complete audit trail for every access, decision, and action.
+1. **Zero Trust SLM Boundary** -- The SLM is fundamentally untrusted and sandboxed. It never queries databases, calls tools/functions, decides what data to fetch, or maintains state across requests.
+2. **Claim-Based Truth Model** -- All company data is represented as immutable, versioned claims with full provenance tracking, sensitivity classification, and compliance tags.
+3. **Deterministic Control Plane** -- The Compiler is the central authority. All decisions are deterministic and testable.
+4. **Context Governance** -- Strict data minimization and sanitization before any model interaction.
+5. **Separation of Trust Boundaries** -- Strict network and logical isolation between trusted (data/policy) and untrusted (SLM) zones.
+6. **Output Validation** -- All SLM outputs are validated for fact consistency and hallucination detection.
+7. **Fail-Safe Degradation** -- System degrades gracefully without compromising security.
+8. **Auditability First** -- Complete audit trail for every access, decision, and action.
 
 ---
 

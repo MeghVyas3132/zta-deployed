@@ -1,4 +1,4 @@
-# ZTA-AI — Data Integration & Connector Architecture
+# ZTA-AI — Data Integration & Connector Architecture (SLM-Strict)
 
 **// universal connector layer — on-prem · cloud · saas · files**
 
@@ -64,17 +64,20 @@
 
 ---
 
-## 03 — Universal Ingest Pipeline
+## 03 — Universal Ingest Pipeline (Claim-Based Architecture)
 
-**Every source goes through these steps:**
+**Every source goes through these steps to produce immutable, versioned claims:**
 
 1.  **STEP 01: Source Connect**: Credential validated, connection tested, read-only access confirmed. (AUTH CHECK)
 2.  **STEP 02: Schema Discovery**: Tables, fields, types auto-discovered. Admin reviews & approves exposed fields. (FIELD MAP)
 3.  **STEP 03: PII Scanner**: Detects names, emails, SSNs, phone numbers, card numbers. Auto-flags for masking. (PII DETECT)
-4.  **STEP 04: RBAC Mapping**: Admin assigns which departments and roles can see each table/collection/field. (ROLE ASSIGN)
-5.  **STEP 05: Alias Layer**: Real table & column names replaced with abstract aliases before LLM can ever see them. (ALIASING)
-6.  **STEP 06: Index & Embed**: Vector embeddings created for semantic search. Stored in isolated per-tenant index. (VECTOR DB)
-7.  **STEP 07: Live & Ready**: Source registered. Sync schedule set. ZTA-AI can now serve queries against this data. (ACTIVE)
+4.  **STEP 04: RBAC Mapping**: Admin assigns which departments and roles can see each table/collection/field via Policy Engine. (ROLE ASSIGN)
+5.  **STEP 05: Alias Layer**: Real table & column names replaced with abstract aliases. SLM never sees real names. (ALIASING)
+6.  **STEP 06: Claim Generation**: Data converted to immutable, versioned claims with provenance, sensitivity, and compliance tags. (CLAIM ENGINE)
+7.  **STEP 07: Index & Embed**: Vector embeddings created for semantic search (RAG path). Stored in isolated per-tenant index. (VECTOR DB)
+8.  **STEP 08: Live & Ready**: Source registered. Sync schedule set. ZTA-AI can now serve queries against this data. (ACTIVE)
+
+**Note**: SLM receives only pre-approved, sanitized claims via the Context Governance Layer — never raw data.
 
 ---
 
@@ -168,7 +171,7 @@ docker run -d \
 6.  **06: Set Sync Schedule**: Choose real-time CDC, hourly, daily, or manual. ZTA-AI handles incremental sync automatically.
 7.  **07: Go Live**: Source active. Employees can now ask the chatbot questions backed by this data immediately.
 
-> **Security Note**: ZTA-AI stores **zero raw data** from the client's systems. It stores only the alias map, vector embeddings of approved content, and the RBAC policy config. All actual query execution happens against the client's live source (or via the on-prem agent). If a client disconnects, all their config is wiped from ZTA-AI systems within 24 hours.
+> **Security Note**: ZTA-AI stores **zero raw data** from the client's systems. It stores only the alias map, immutable claims with provenance/compliance tags, vector embeddings of approved content, and the RBAC policy config. All actual query execution happens against the client's live source (or via the on-prem agent). The SLM receives only pre-approved, sanitized claim payloads — never raw data. If a client disconnects, all their config is wiped from ZTA-AI systems within 24 hours.
 
 ---
 
