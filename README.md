@@ -99,3 +99,24 @@ This documentation site is deployed via [Netlify](https://www.netlify.com/) with
 
 **Version:** 1.0.0
 **Classification:** Internal -- Production System Specification
+
+## Local Full-Stack Docker Run
+
+From the repository root:
+
+```bash
+docker compose up --build -d
+```
+
+Services:
+
+- Frontend: http://localhost:8080
+- Backend API: http://localhost:8000
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
+
+To stop:
+
+```bash
+docker compose down
+```
