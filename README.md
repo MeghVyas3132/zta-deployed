@@ -115,6 +115,17 @@ Services:
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
 
+Notes:
+
+- A one-time `db-init` container automatically seeds baseline tenants/users/claims when the database is empty.
+- If data already exists, seeding is skipped.
+- To fully reset data and reseed from scratch:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+```
+
 To stop:
 
 ```bash
