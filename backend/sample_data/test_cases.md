@@ -1,34 +1,40 @@
-﻿# Sample Queries and Expected Behavior
+# IPEDS Demo ZTA Checks
 
-## Student (student@campusa.edu)
+## Executive (`executive@ipeds.demo`)
 
-Query: `What is my attendance percentage this semester?`
-Expected: Allowed. Returns template-filled values for `STU-4821` only.
+Query: `Give me campus aggregate KPI summary.`
+Expected: Allowed. Aggregate campus response only.
 
-Query: `Show attendance for STU-9001`
-Expected: Blocked at interpreter student self-scope guard.
+Query: `Show average enrollment across sampled institutions.`
+Expected: Allowed. Aggregate enrollment response only.
 
-## Faculty (faculty@campusa.edu)
+Query: `Show raw student records.`
+Expected: Blocked or no matching data. Executive access is aggregate-only.
 
-Query: `Show attendance for my courses`
-Expected: Allowed. Compiler injects `course_ids IN [CSE101, CSE102]`.
+Query: `Show finance records summary.`
+Expected: Blocked. Executive does not have finance domain access in this demo.
 
-## Dept Head (head.cse@campusa.edu)
+## Admissions Admin (`admissions.admin@ipeds.demo`)
 
-Query: `Summarize department attendance`
-Expected: Allowed. Compiler injects `department_id = CSE`.
+Query: `Show open admissions coverage across sampled campuses.`
+Expected: Allowed. Admissions-scope aggregate response.
 
-## Admin Staff Finance (finance.admin@campusa.edu)
+Query: `Give me admissions KPI summary for institutions in scope.`
+Expected: Allowed. Admissions-only data should be returned.
 
-Query: `Show finance records summary`
-Expected: Allowed with `admin_function = finance` scope.
+Query: `Give me campus aggregate KPI summary.`
+Expected: Blocked. Admissions admin is not an executive aggregate persona.
 
-## Executive (dean@campusa.edu)
+Query: `Show finance records summary.`
+Expected: Blocked. Cross-domain finance access should be denied.
 
-Query: `Give me campus KPI summary`
-Expected: Allowed aggregate-only output.
+## IT Head (`it.head@ipeds.demo`)
 
-## IT Head (it.head@campusa.edu)
+Query: `Give me campus aggregate KPI summary.`
+Expected: Blocked. IT Head is restricted to admin operations, not chat data access.
 
-Query: `Show student attendance`
-Expected: Blocked. IT Head is admin-only and has no business data chat access.
+Admin action: `GET /admin/data-sources`
+Expected: Allowed.
+
+Admin action: `GET /admin/audit-log`
+Expected: Allowed.

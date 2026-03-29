@@ -68,6 +68,22 @@ INTENT_RULES: tuple[IntentRule, ...] = (
         keywords=("kpi", "summary", "trend", "campus"),
         requires_aggregation=True,
     ),
+    IntentRule(
+        name="executive_enrollment_overview",
+        domain="campus",
+        entity_type="institution_enrollment_summary",
+        slot_keys=("total_enrollment", "institution_count"),
+        keywords=("enrollment", "enrolment", "headcount", "student count", "institutions"),
+        requires_aggregation=True,
+    ),
+    IntentRule(
+        name="admissions_overview",
+        domain="admissions",
+        entity_type="admin_function_summary",
+        slot_keys=("function_metric", "record_count"),
+        keywords=("admission", "admissions", "applicant", "enrollment"),
+        requires_aggregation=True,
+    ),
 )
 
 
@@ -106,7 +122,10 @@ def extract_intent(
     lower_prompt = aliased_prompt.lower()
 
     if persona_type == "executive":
-        rule = next(rule for rule in INTENT_RULES if rule.name == "executive_kpi")
+        if any(keyword in lower_prompt for keyword in ("enrollment", "enrolment", "headcount", "student count", "institutions")):
+            rule = next(rule for rule in INTENT_RULES if rule.name == "executive_enrollment_overview")
+        else:
+            rule = next(rule for rule in INTENT_RULES if rule.name == "executive_kpi")
     else:
         rule = None
         for candidate in INTENT_RULES:

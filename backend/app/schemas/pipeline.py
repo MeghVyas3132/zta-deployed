@@ -62,7 +62,7 @@ class InterpreterOutput(BaseModel):
 
 class CompiledQueryPlan(BaseModel):
     tenant_id: str
-    source_type: str = "mock_claims"
+    source_type: str = "ipeds_claims"
     domain: str
     entity_type: str
     select_claim_keys: list[str] = Field(default_factory=list)

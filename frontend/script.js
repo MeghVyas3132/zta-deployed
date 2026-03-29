@@ -158,7 +158,7 @@ async function loginWithToken(mockToken) {
 async function handleLogin() {
   const raw = els.googleToken.value.trim();
   if (!raw) {
-    throw new Error("Enter a mock token, e.g. mock:student@campusa.edu");
+    throw new Error("Enter a mock token, e.g. mock:executive@ipeds.demo");
   }
   await loginWithToken(raw);
 }
@@ -214,6 +214,7 @@ function streamChat() {
 
     const wsBase = baseUrl().replace(/^http/, "ws");
     const ws = new WebSocket(`${wsBase}/chat/stream?token=${encodeURIComponent(token)}`);
+    let settled = false;
 
     els.chatStream.textContent = "";
     setStatus("loading", "Streaming chat response...");
@@ -229,10 +230,12 @@ function streamChat() {
       } else if (msg.type === "done") {
         els.chatStream.textContent += `\n\n[source=${msg.source}] [latency_ms=${msg.latency_ms}]`;
         setStatus("ok", "Streaming complete");
+        settled = true;
         ws.close();
         resolve();
       } else if (msg.type === "error") {
         setStatus("error", msg.message || "Streaming error");
+        settled = true;
         ws.close();
         reject(new Error(msg.message || "Streaming error"));
       }
@@ -240,7 +243,14 @@ function streamChat() {
 
     ws.onerror = () => {
       setStatus("error", "WebSocket connection error");
+      settled = true;
       reject(new Error("WebSocket error"));
+    };
+
+    ws.onclose = () => {
+      if (settled) return;
+      setStatus("error", "Chat stream closed. Login again if your token expired.");
+      reject(new Error("WebSocket closed before the response completed"));
     };
   });
 }

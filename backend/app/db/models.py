@@ -64,6 +64,7 @@ class DataSourceType(str, enum.Enum):
     google_drive = "google_drive"
     mysql = "mysql"
     postgresql = "postgresql"
+    ipeds_claims = "ipeds_claims"
     mock_claims = "mock_claims"
 
 

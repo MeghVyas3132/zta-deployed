@@ -6,9 +6,8 @@ from app.schemas.pipeline import CompiledQueryPlan
 
 class ConnectorRegistry:
     def get(self, plan: CompiledQueryPlan):
-        # MVP runtime executes against claim store via mock connector.
-        # Real adapters are available as structured stubs for production wiring.
-        if plan.source_type == "mock_claims":
+        # Both seeded IPEDS data and legacy demos execute against the same trusted claim store.
+        if plan.source_type in {"ipeds_claims", "mock_claims"}:
             return mock_claims_connector
         return mock_claims_connector
 

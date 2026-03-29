@@ -46,7 +46,12 @@ async def stream_chat(websocket: WebSocket, token: str = Query(default="")) -> N
             await websocket.close(code=1008)
             return
 
-        scope = get_scope_from_token(db=db, token=token)
+        try:
+            scope = get_scope_from_token(db=db, token=token)
+        except ZTAError as exc:
+            await websocket.send_json(TokenFrame(type="error", message=exc.message).model_dump())
+            await websocket.close(code=1008)
+            return
 
         while True:
             payload = await websocket.receive_json()

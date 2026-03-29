@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     celery_broker_url: str = Field(default="redis://localhost:6379/1")
     celery_result_backend: str = Field(default="redis://localhost:6379/2")
 
+    slm_provider: str = Field(default="simulator")
+    slm_base_url: str = Field(default="https://integrate.api.nvidia.com/v1")
+    slm_api_key: str = Field(default="")
+    slm_model: str = Field(default="microsoft/phi-3-mini-128k-instruct")
+    slm_temperature: float = Field(default=0.2)
+    slm_top_p: float = Field(default=0.7)
+    slm_max_tokens: int = Field(default=256)
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
