@@ -37,12 +37,8 @@ async def monitor_pipeline(websocket: WebSocket, token: str = Query(default=""))
 
         try:
             scope = get_scope_from_token(db=db, token=token)
-            if scope.persona_type != "it_head":
-                await websocket.send_json(
-                    {"type": "error", "message": "IT HEAD access required"}
-                )
-                await websocket.close(code=1008)
-                return
+            # Allow all authenticated users to view the pipeline monitor
+            # This helps users understand the Zero Trust Architecture
         except ZTAError as exc:
             await websocket.send_json({"type": "error", "message": exc.message})
             await websocket.close(code=1008)

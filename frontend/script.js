@@ -430,7 +430,7 @@ function initializePipelineStages() {
 function connectPipelineMonitor() {
   const token = getToken();
   if (!token) {
-    setStatus('error', 'Login as IT HEAD first');
+    setStatus('error', 'Please login first to view the pipeline monitor');
     return;
   }
 
