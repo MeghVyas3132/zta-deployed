@@ -32,6 +32,7 @@ jobs:
       REDIS_URL: redis://localhost:6399/0
       CELERY_BROKER_URL: redis://localhost:6399/1
       CELERY_RESULT_BACKEND: redis://localhost:6399/2
+      PYTHONPATH: ${{ github.workspace }}/backend
 
     steps:
       - name: Checkout code
@@ -86,7 +87,7 @@ jobs:
           CELERY_TASK_ALWAYS_EAGER: "true"
           CELERY_TASK_EAGER_PROPAGATES: "true"
         run: |
-          pytest -q tests -p no:cacheprovider
+          python -m pytest -q tests -p no:cacheprovider
 
       - name: Smoke test - app boots and /health passes
         run: |
