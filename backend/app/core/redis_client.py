@@ -71,11 +71,9 @@ class RedisProtocol(Protocol):
         ...
 
 try:
-    from redis import Redis as RedisSync
-    from redis.exceptions import RedisError as RedisClientError
+    import redis
 except Exception:  # noqa: BLE001
-    RedisSync = None
-    RedisClientError = RedisError
+    redis = None
 
 
 from app.core.config import get_settings
@@ -216,13 +214,13 @@ class RedisClient:
         self._lock = threading.Lock()
 
     def _connect(self) -> RedisProtocol:
-        if RedisSync is None:
+        if redis is None:
             return InMemoryRedis()
         try:
-            candidate = RedisSync.from_url(self._settings.redis_url, decode_responses=True)
+            candidate = redis.Redis.from_url(self._settings.redis_url, decode_responses=True)
             candidate.ping()
             return cast(RedisProtocol, candidate)
-        except RedisClientError:
+        except redis.exceptions.RedisError:
             return InMemoryRedis()
 
     @property
