@@ -25,8 +25,11 @@ INTENT_TEMPLATES: dict[str, str] = {
     "faculty_course_attendance": "You are teaching [SLOT_1] courses with an average attendance of [SLOT_2]%.",
     # Department intents
     "department_metrics": "Department metric is [SLOT_1] with [SLOT_2] students enrolled.",
-    # Admin intents
+    # Admin function intents
     "admin_function_report": "Function metric is [SLOT_1] across [SLOT_2] records.",
+    # IT Head admin intents
+    "admin_data_sources": "Data sources: [SLOT_1]",
+    "admin_audit_log": "Recent audit entries: [SLOT_1]",
     # Executive intents
     "executive_kpi": "The KPI value is [SLOT_1] with a trend change of [SLOT_2].",
     "executive_enrollment_overview": "Total enrollment is [SLOT_1] across [SLOT_2] institutions.",
@@ -49,7 +52,8 @@ class SLMSimulator:
         self._client: OpenAI | None = None
 
     def render_template(self, intent: InterpretedIntent, scope: ScopeContext) -> str:
-        if scope.persona_type == "it_head":
+        # IT Head can only use admin templates
+        if scope.persona_type == "it_head" and intent.domain != "admin":
             return "Access to chat templates is blocked for this persona."
 
         # Use predefined template if available for this intent

@@ -6,7 +6,7 @@ from app.schemas.pipeline import CompiledQueryPlan
 
 class ConnectorRegistry:
     def get(self, plan: CompiledQueryPlan):
-        # Both seeded IPEDS data and legacy demos execute against the same trusted claim store.
+        # All queries execute against the trusted claim store seeded from IPEDS CSV data.
         if plan.source_type in {"ipeds_claims", "mock_claims"}:
             return mock_claims_connector
         return mock_claims_connector

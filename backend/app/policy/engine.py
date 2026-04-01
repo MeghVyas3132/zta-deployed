@@ -9,10 +9,20 @@ from app.schemas.pipeline import CompiledQueryPlan, InterpretedIntent, PolicyDec
 
 class PolicyEngine:
     def authorize(self, scope: ScopeContext, intent: InterpretedIntent, plan: CompiledQueryPlan) -> PolicyDecision:
-        if scope.persona_type == "it_head" or not scope.chat_enabled:
+        # IT Head can only access admin domain through chat
+        if scope.persona_type == "it_head":
+            if intent.domain != "admin":
+                raise AuthorizationError(
+                    message="IT Head is restricted to admin dashboard and cannot access business data chat",
+                    code="IT_HEAD_CHAT_BLOCKED",
+                )
+            # Allow admin domain queries for IT Head
+            return PolicyDecision(allowed=True)
+
+        if not scope.chat_enabled:
             raise AuthorizationError(
-                message="IT Head is restricted to admin dashboard and cannot access business data chat",
-                code="IT_HEAD_CHAT_BLOCKED",
+                message="Chat access is disabled for this user",
+                code="CHAT_DISABLED",
             )
 
         if not is_domain_allowed(intent.domain, scope.allowed_domains):

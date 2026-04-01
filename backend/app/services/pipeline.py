@@ -133,63 +133,55 @@ class PipelineService:
             )
 
         try:
-            # Stage 1: IT HEAD check
-            with self._track_stage(pipeline_id, "it_head_check", 1):
-                if scope.persona_type == "it_head":
-                    raise AuthorizationError(
-                        message="IT Head is restricted to admin dashboard and cannot access business data chat",
-                        code="IT_HEAD_CHAT_BLOCKED",
-                    )
-
-            # Stage 2: Interpreter layer (sanitizer, domain gate, aliaser, intent extraction)
-            with self._track_stage(pipeline_id, "interpreter", 2):
+            # Stage 1: Interpreter layer (sanitizer, domain gate, aliaser, intent extraction)
+            with self._track_stage(pipeline_id, "interpreter", 1):
                 interpreter_output = interpreter_service.run(db, scope, query_text)
                 intent_hash = interpreter_output.intent_hash
                 domains = [interpreter_output.intent.domain]
 
-            # Stage 3: Intent cache check
+            # Stage 2: Intent cache check
             with self._track_stage(
-                pipeline_id, "intent_cache", 3, {"intent_hash": interpreter_output.intent_hash[:16]}
+                pipeline_id, "intent_cache", 2, {"intent_hash": interpreter_output.intent_hash[:16]}
             ):
                 template = interpreter_output.cached_template
                 cache_hit = template is not None
 
-            # Stage 4: SLM render (conditional on cache miss)
+            # Stage 3: SLM render (conditional on cache miss)
             if not cache_hit:
-                with self._track_stage(pipeline_id, "slm_render", 4):
+                with self._track_stage(pipeline_id, "slm_render", 3):
                     template = slm_simulator.render_template(interpreter_output.intent, scope)
             else:
                 # Emit skipped event if cache hit
                 pipeline_monitor.emit_stage_event(
                     pipeline_id=pipeline_id,
                     stage_name="slm_render",
-                    stage_index=4,
+                    stage_index=3,
                     status="skipped",
                     metadata={"reason": "cache_hit"},
                 )
 
-            # Stage 5: Output guard validation
-            with self._track_stage(pipeline_id, "output_guard", 5):
+            # Stage 4: Output guard validation
+            with self._track_stage(pipeline_id, "output_guard", 4):
                 output_guard.validate(template, interpreter_output.schema_real_identifiers)
 
-            # Stage 6: Compiler (query plan generation)
-            with self._track_stage(pipeline_id, "compiler", 6):
+            # Stage 5: Compiler (query plan generation)
+            with self._track_stage(pipeline_id, "compiler", 5):
                 compiled_query = compiler_service.compile_intent(scope, interpreter_output.intent)
 
-            # Stage 7: Policy authorization
-            with self._track_stage(pipeline_id, "policy_authorization", 7):
+            # Stage 6: Policy authorization (handles IT Head non-admin blocking)
+            with self._track_stage(pipeline_id, "policy_authorization", 6):
                 policy_engine.authorize(scope, interpreter_output.intent, compiled_query)
 
-            # Stage 8: Tool layer execution
-            with self._track_stage(pipeline_id, "tool_execution", 8):
+            # Stage 7: Tool layer execution
+            with self._track_stage(pipeline_id, "tool_execution", 7):
                 values = tool_layer_service.execute(db, compiled_query)
 
-            # Stage 9: Field masking
-            with self._track_stage(pipeline_id, "field_masking", 9):
+            # Stage 8: Field masking
+            with self._track_stage(pipeline_id, "field_masking", 8):
                 masked_values, masked_fields_applied = policy_engine.apply_field_masking(values, scope.masked_fields)
 
-            # Stage 10: Detokenization
-            with self._track_stage(pipeline_id, "detokenization", 10):
+            # Stage 9: Detokenization
+            with self._track_stage(pipeline_id, "detokenization", 9):
                 final_response = compiler_service.detokenize(
                     template=template,
                     query_plan=compiled_query,
@@ -199,9 +191,9 @@ class PipelineService:
 
             latency_ms = int((time.perf_counter() - started) * 1000)
 
-            # Stage 11: Cache storage (conditional on cache miss)
+            # Stage 10: Cache storage (conditional on cache miss)
             if not cache_hit:
-                with self._track_stage(pipeline_id, "cache_storage", 11):
+                with self._track_stage(pipeline_id, "cache_storage", 10):
                     intent_cache_service.set(
                         db=db,
                         tenant_id=scope.tenant_id,
@@ -215,17 +207,17 @@ class PipelineService:
                 pipeline_monitor.emit_stage_event(
                     pipeline_id=pipeline_id,
                     stage_name="cache_storage",
-                    stage_index=11,
+                    stage_index=10,
                     status="skipped",
                     metadata={"reason": "cache_hit"},
                 )
 
-            # Stage 12: Store assistant message in history
-            with self._track_stage(pipeline_id, "history_assistant_message", 12):
+            # Stage 11: Store assistant message in history
+            with self._track_stage(pipeline_id, "history_assistant_message", 11):
                 history_service.append(scope.tenant_id, scope.user_id, scope.session_id, "assistant", final_response)
 
-            # Stage 13: Audit logging
-            with self._track_stage(pipeline_id, "audit_logging", 13):
+            # Stage 12: Audit logging
+            with self._track_stage(pipeline_id, "audit_logging", 12):
                 audit_service.enqueue(
                     AuditEvent(
                         tenant_id=scope.tenant_id,
@@ -261,7 +253,7 @@ class PipelineService:
             fallback_hash = intent_hash or "0" * 64
 
             # Still log audit even on error
-            with self._track_stage(pipeline_id, "audit_logging_error", 13):
+            with self._track_stage(pipeline_id, "audit_logging_error", 12):
                 audit_service.enqueue(
                     AuditEvent(
                         tenant_id=scope.tenant_id,

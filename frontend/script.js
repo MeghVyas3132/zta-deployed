@@ -225,7 +225,7 @@ async function loginWithToken(mockToken) {
 async function handleLogin() {
   const raw = els.googleToken.value.trim();
   if (!raw) {
-    throw new Error("Enter a mock token, e.g. mock:executive@ipeds.demo");
+    throw new Error("Enter a mock token, e.g. mock:executive@ipeds.local");
   }
   await loginWithToken(raw);
 }

@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     Claim,
     ClaimSensitivity,
+    PersonaType,
     Tenant,
     TenantStatus,
+    User,
+    UserStatus,
 )
 
 
@@ -36,6 +39,13 @@ class IpedInstitution:
     total_enrollment: float
     total_fte: float
     graduate_mix_delta: float
+    # New fields for expanded claims
+    sector: int  # 1=Public 4yr, 2=Private nonprofit 4yr, etc.
+    control: int  # 1=Public, 2=Private nonprofit, 3=Private for-profit
+    hbcu: int  # 1=Yes, 2=No
+    locale: int  # 11-13=City, 21-23=Suburb, 31-33=Town, 41-43=Rural
+    inst_size: int  # 1=Under 1000, 2=1000-4999, 3=5000-9999, 4=10000-19999, 5=20000+
+    degree_granting: int  # 1=Yes, 2=No
 
 
 def _csv_exists() -> bool:
@@ -111,6 +121,14 @@ def _build_institutions() -> list[IpedInstitution]:
 
         graduate_mix_delta = round(((graduate_fte - undergrad_fte) / max(total_fte, 1.0)) * 100, 2)
 
+        # Extract institution characteristics from hd2024
+        sector = _safe_int(hd.get("SECTOR"))
+        control = _safe_int(hd.get("CONTROL"))
+        hbcu = _safe_int(hd.get("HBCU"))
+        locale = _safe_int(hd.get("LOCALE"))
+        inst_size = _safe_int(hd.get("INSTSIZE"))
+        degree_granting = _safe_int(hd.get("DEGGRANT"))
+
         institutions.append(
             IpedInstitution(
                 unitid=unitid,
@@ -122,6 +140,12 @@ def _build_institutions() -> list[IpedInstitution]:
                 total_enrollment=total_enrollment,
                 total_fte=round(total_fte, 2),
                 graduate_mix_delta=graduate_mix_delta,
+                sector=sector,
+                control=control,
+                hbcu=hbcu,
+                locale=locale,
+                inst_size=inst_size,
+                degree_granting=degree_granting,
             )
         )
 
@@ -140,6 +164,42 @@ def _seed_tenant(db: Session) -> None:
     db.add(tenant)
 
 
+def _seed_users(db: Session) -> None:
+    """Seed users required for authentication."""
+    users = [
+        User(
+            tenant_id=IPEDS_TENANT_ID,
+            email="executive@ipeds.local",
+            name="IPEDS Executive",
+            persona_type=PersonaType.executive,
+            department="Executive Office",
+            external_id="EXEC-001",
+            status=UserStatus.active,
+        ),
+        User(
+            tenant_id=IPEDS_TENANT_ID,
+            email="admissions@ipeds.local",
+            name="Admissions Staff",
+            persona_type=PersonaType.admin_staff,
+            admin_function="admissions",
+            department="Admissions",
+            external_id="ADM-001",
+            status=UserStatus.active,
+        ),
+        User(
+            tenant_id=IPEDS_TENANT_ID,
+            email="ithead@ipeds.local",
+            name="IT Head",
+            persona_type=PersonaType.it_head,
+            department="Information Technology",
+            external_id="IT-001",
+            status=UserStatus.active,
+        ),
+    ]
+    db.add_all(users)
+    print(f"Seeded {len(users)} users")
+
+
 def _build_claims(institutions: list[IpedInstitution]) -> list[Claim]:
     claims: list[Claim] = []
     for institution in institutions:
@@ -148,6 +208,7 @@ def _build_claims(institutions: list[IpedInstitution]) -> list[Claim]:
 
         claims.extend(
             [
+                # Executive KPI claims
                 Claim(
                     tenant_id=IPEDS_TENANT_ID,
                     domain="campus",
@@ -170,6 +231,7 @@ def _build_claims(institutions: list[IpedInstitution]) -> list[Claim]:
                     sensitivity=ClaimSensitivity.internal,
                     compliance_tags=["IPEDS"],
                 ),
+                # Enrollment overview claims
                 Claim(
                     tenant_id=IPEDS_TENANT_ID,
                     domain="campus",
@@ -192,6 +254,7 @@ def _build_claims(institutions: list[IpedInstitution]) -> list[Claim]:
                     sensitivity=ClaimSensitivity.internal,
                     compliance_tags=["IPEDS"],
                 ),
+                # Admissions claims
                 Claim(
                     tenant_id=IPEDS_TENANT_ID,
                     domain="admissions",
@@ -216,6 +279,97 @@ def _build_claims(institutions: list[IpedInstitution]) -> list[Claim]:
                     sensitivity=ClaimSensitivity.internal,
                     compliance_tags=["IPEDS"],
                 ),
+                # Institution demographics claims (HBCU, public/private)
+                Claim(
+                    tenant_id=IPEDS_TENANT_ID,
+                    domain="campus",
+                    entity_type="institution_demographics",
+                    entity_id=entity_id,
+                    claim_key="hbcu_count",
+                    value_number=1 if institution.hbcu == 1 else 0,
+                    provenance=provenance,
+                    sensitivity=ClaimSensitivity.low,
+                    compliance_tags=["IPEDS"],
+                ),
+                Claim(
+                    tenant_id=IPEDS_TENANT_ID,
+                    domain="campus",
+                    entity_type="institution_demographics",
+                    entity_id=entity_id,
+                    claim_key="public_count",
+                    value_number=1 if institution.control == 1 else 0,
+                    provenance=provenance,
+                    sensitivity=ClaimSensitivity.low,
+                    compliance_tags=["IPEDS"],
+                ),
+                Claim(
+                    tenant_id=IPEDS_TENANT_ID,
+                    domain="campus",
+                    entity_type="institution_demographics",
+                    entity_id=entity_id,
+                    claim_key="private_count",
+                    value_number=1 if institution.control in (2, 3) else 0,
+                    provenance=provenance,
+                    sensitivity=ClaimSensitivity.low,
+                    compliance_tags=["IPEDS"],
+                ),
+                Claim(
+                    tenant_id=IPEDS_TENANT_ID,
+                    domain="campus",
+                    entity_type="institution_demographics",
+                    entity_id=entity_id,
+                    claim_key="total_institutions",
+                    value_number=1,
+                    provenance=provenance,
+                    sensitivity=ClaimSensitivity.low,
+                    compliance_tags=["IPEDS"],
+                ),
+                # Institution size distribution claims
+                Claim(
+                    tenant_id=IPEDS_TENANT_ID,
+                    domain="campus",
+                    entity_type="institution_size_summary",
+                    entity_id=entity_id,
+                    claim_key="small_count",
+                    value_number=1 if institution.inst_size in (1, 2) else 0,  # Under 5000
+                    provenance=provenance,
+                    sensitivity=ClaimSensitivity.low,
+                    compliance_tags=["IPEDS"],
+                ),
+                Claim(
+                    tenant_id=IPEDS_TENANT_ID,
+                    domain="campus",
+                    entity_type="institution_size_summary",
+                    entity_id=entity_id,
+                    claim_key="medium_count",
+                    value_number=1 if institution.inst_size == 3 else 0,  # 5000-9999
+                    provenance=provenance,
+                    sensitivity=ClaimSensitivity.low,
+                    compliance_tags=["IPEDS"],
+                ),
+                Claim(
+                    tenant_id=IPEDS_TENANT_ID,
+                    domain="campus",
+                    entity_type="institution_size_summary",
+                    entity_id=entity_id,
+                    claim_key="large_count",
+                    value_number=1 if institution.inst_size in (4, 5) else 0,  # 10000+
+                    provenance=provenance,
+                    sensitivity=ClaimSensitivity.low,
+                    compliance_tags=["IPEDS"],
+                ),
+                Claim(
+                    tenant_id=IPEDS_TENANT_ID,
+                    domain="campus",
+                    entity_type="institution_size_summary",
+                    entity_id=entity_id,
+                    claim_key="total_institutions",
+                    value_number=1,
+                    provenance=provenance,
+                    sensitivity=ClaimSensitivity.low,
+                    compliance_tags=["IPEDS"],
+                ),
+                # Institution profile (JSON catalog)
                 Claim(
                     tenant_id=IPEDS_TENANT_ID,
                     domain="admin",
@@ -228,6 +382,10 @@ def _build_claims(institutions: list[IpedInstitution]) -> list[Claim]:
                         "city": institution.city,
                         "state": institution.state,
                         "website": institution.website,
+                        "sector": institution.sector,
+                        "control": "Public" if institution.control == 1 else "Private",
+                        "hbcu": institution.hbcu == 1,
+                        "size_category": institution.inst_size,
                     },
                     provenance=provenance,
                     sensitivity=ClaimSensitivity.low,
@@ -250,6 +408,8 @@ def seed_ipeds_claims(db: Session) -> int:
         return 0
 
     _seed_tenant(db)
+    db.flush()
+    _seed_users(db)
     db.flush()
     db.add_all(_build_claims(institutions))
     print(f"Seeded IPEDS CSV claims with {len(institutions)} institutions")

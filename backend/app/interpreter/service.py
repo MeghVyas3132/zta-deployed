@@ -33,10 +33,30 @@ class InterpreterService:
                 code="STUDENT_SCOPE_BLOCKED",
             )
 
+    def _enforce_executive_aggregate_only(self, prompt: str, scope: ScopeContext) -> None:
+        if scope.persona_type != "executive" or not scope.aggregate_only:
+            return
+
+        # Block explicit requests for raw, individual, or person-level data
+        raw_data_patterns = (
+            r"\braw\s+(student|data|record)",
+            r"\b(individual|person|specific)\s+(student|record|data)",
+            r"\bstudent\s+records?\b",
+            r"\blist\s+(all\s+)?students\b",
+            r"\bshow\s+(me\s+)?(all\s+)?students\b",
+        )
+        for pattern in raw_data_patterns:
+            if re.search(pattern, prompt, flags=re.IGNORECASE):
+                raise AuthorizationError(
+                    message="Executive access is restricted to aggregate data only",
+                    code="EXEC_AGGREGATE_ONLY",
+                )
+
     def run(self, db: Session, scope: ScopeContext, prompt: str) -> InterpreterOutput:
         sanitized_prompt, _removed_patterns = sanitize_prompt(prompt)
 
         self._enforce_student_scope(sanitized_prompt, scope)
+        self._enforce_executive_aggregate_only(sanitized_prompt, scope)
 
         detected_domains = detect_domains(sanitized_prompt)
         enforce_domain_gate(detected_domains, scope.allowed_domains)

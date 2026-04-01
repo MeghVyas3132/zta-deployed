@@ -5,6 +5,7 @@ import re
 from app.core.exceptions import AuthorizationError
 
 
+# Explicit domain keywords - these definitively identify a domain
 DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
     "academic": (
         "attendance",
@@ -20,11 +21,14 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
     ),
     "finance": ("fee", "payment", "budget", "revenue", "p&l", "salary", "payroll", "invoice"),
     "hr": ("leave", "faculty record", "employee", "payslip", "attrition"),
-    "admissions": ("admission", "applicant", "enrolment", "enrollment"),
+    "admissions": ("admission", "admissions", "applicant", "open admission"),
     "department": ("department", "dept", "faculty performance"),
-    "campus": ("kpi", "cross campus", "aggregate", "summary", "trend"),
-    "admin": ("audit", "schema", "connector", "kill switch"),
+    "campus": ("cross campus", "campus aggregate", "enrollment", "enrolment", "headcount", "institution"),
+    "admin": ("audit", "schema", "connector", "kill switch", "data-sources", "audit-log"),
 }
+
+# Modifier keywords - only trigger campus domain when no explicit domain is found
+AGGREGATION_MODIFIERS: tuple[str, ...] = ("kpi", "aggregate", "summary", "trend", "overview", "metrics")
 
 
 def normalize_domain(domain: str) -> str:
@@ -36,14 +40,24 @@ def normalize_domain(domain: str) -> str:
 def detect_domains(prompt: str) -> list[str]:
     lower_prompt = prompt.lower()
     detected: list[str] = []
+
+    # First pass: detect explicit domain keywords
     for domain, keywords in DOMAIN_KEYWORDS.items():
         for keyword in keywords:
             if re.search(rf"\b{re.escape(keyword)}\b", lower_prompt):
                 detected.append(domain)
                 break
 
+    # Second pass: if no explicit domain found but aggregation modifiers present, default to campus
     if not detected:
-        detected = ["academic"]
+        has_aggregation_modifier = any(
+            re.search(rf"\b{re.escape(mod)}\b", lower_prompt) for mod in AGGREGATION_MODIFIERS
+        )
+        if has_aggregation_modifier:
+            detected = ["campus"]
+        else:
+            detected = ["academic"]
+
     return sorted(set(detected))
 
 

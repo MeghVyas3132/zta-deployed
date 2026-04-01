@@ -18,6 +18,56 @@ class IntentRule:
 
 
 INTENT_RULES: tuple[IntentRule, ...] = (
+    # IPEDS institution-level data (always available)
+    IntentRule(
+        name="executive_kpi",
+        domain="campus",
+        entity_type="executive_summary",
+        slot_keys=("kpi_value", "trend_delta"),
+        keywords=("kpi", "summary", "trend", "campus", "overview", "metrics", "performance"),
+        requires_aggregation=True,
+    ),
+    IntentRule(
+        name="executive_enrollment_overview",
+        domain="campus",
+        entity_type="institution_enrollment_summary",
+        slot_keys=("total_enrollment", "institution_count"),
+        keywords=("enrollment", "enrolment", "headcount", "student count", "institutions", "students"),
+        requires_aggregation=True,
+    ),
+    IntentRule(
+        name="admissions_overview",
+        domain="admissions",
+        entity_type="admin_function_summary",
+        slot_keys=("function_metric", "record_count"),
+        keywords=("admission", "admissions", "applicant", "open admission"),
+        requires_aggregation=True,
+    ),
+    IntentRule(
+        name="institution_profile",
+        domain="admin",
+        entity_type="institution_catalog",
+        slot_keys=("profile",),
+        keywords=("institution", "university", "college", "school", "profile", "info", "details"),
+        requires_aggregation=False,
+    ),
+    IntentRule(
+        name="institution_demographics",
+        domain="campus",
+        entity_type="institution_demographics",
+        slot_keys=("hbcu_count", "public_count", "private_count", "total_institutions"),
+        keywords=("hbcu", "public", "private", "demographics", "sector", "control", "type"),
+        requires_aggregation=True,
+    ),
+    IntentRule(
+        name="institution_size_distribution",
+        domain="campus",
+        entity_type="institution_size_summary",
+        slot_keys=("small_count", "medium_count", "large_count", "total_institutions"),
+        keywords=("size", "small", "medium", "large", "distribution"),
+        requires_aggregation=True,
+    ),
+    # Student-level data (requires tenant's own database, not IPEDS)
     IntentRule(
         name="student_attendance",
         domain="academic",
@@ -61,28 +111,18 @@ INTENT_RULES: tuple[IntentRule, ...] = (
         keywords=("finance", "payments", "applications", "records"),
     ),
     IntentRule(
-        name="executive_kpi",
-        domain="campus",
-        entity_type="executive_summary",
-        slot_keys=("kpi_value", "trend_delta"),
-        keywords=("kpi", "summary", "trend", "campus"),
-        requires_aggregation=True,
+        name="admin_data_sources",
+        domain="admin",
+        entity_type="admin_data_sources",
+        slot_keys=("sources",),
+        keywords=("data-sources", "data sources", "connectors", "connections"),
     ),
     IntentRule(
-        name="executive_enrollment_overview",
-        domain="campus",
-        entity_type="institution_enrollment_summary",
-        slot_keys=("total_enrollment", "institution_count"),
-        keywords=("enrollment", "enrolment", "headcount", "student count", "institutions"),
-        requires_aggregation=True,
-    ),
-    IntentRule(
-        name="admissions_overview",
-        domain="admissions",
-        entity_type="admin_function_summary",
-        slot_keys=("function_metric", "record_count"),
-        keywords=("admission", "admissions", "applicant", "enrollment"),
-        requires_aggregation=True,
+        name="admin_audit_log",
+        domain="admin",
+        entity_type="admin_audit_log",
+        slot_keys=("entries",),
+        keywords=("audit-log", "audit log", "audit", "activity log", "logs"),
     ),
 )
 
@@ -136,13 +176,23 @@ def extract_intent(
                 break
 
         if rule is None:
+            # Use domain-specific fallbacks that map to existing data
             domain = detected_domains[0]
-            rule = IntentRule(
-                name="domain_summary",
-                domain=domain,
-                entity_type=f"{domain}_summary",
-                slot_keys=("primary_value", "secondary_value"),
-                keywords=(domain,),
+            DOMAIN_FALLBACK_INTENTS: dict[str, str] = {
+                "campus": "executive_kpi",
+                "admissions": "admissions_overview",
+                "admin": "institution_profile",
+                # academic/finance/department/hr require tenant-specific data
+                # Fall back to executive_kpi for aggregated IPEDS view
+                "academic": "executive_kpi",
+                "finance": "executive_kpi",
+                "department": "executive_kpi",
+                "hr": "executive_kpi",
+            }
+            fallback_name = DOMAIN_FALLBACK_INTENTS.get(domain, "executive_kpi")
+            rule = next(
+                (r for r in INTENT_RULES if r.name == fallback_name),
+                INTENT_RULES[0],  # Default to first rule (executive_kpi)
             )
 
     aggregation = "aggregate" if rule.requires_aggregation else None
