@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.db.models import Base
 from app.db.session import SessionLocal, engine
-from scripts.ipeds_import import seed_ipeds_demo
+from scripts.ipeds_import import seed_ipeds_claims
 
 
 def seed() -> None:
@@ -11,11 +11,9 @@ def seed() -> None:
 
     db = SessionLocal()
     try:
-        # Legacy Campus A / Campus B sample seed has been intentionally disabled.
-        # The app now boots against the imported IPEDS dataset only.
-        seeded = seed_ipeds_demo(db)
+        seeded = seed_ipeds_claims(db)
         db.commit()
-        print(f"Seed completed with {seeded} IPEDS institutions")
+        print(f"Seed completed with {seeded} CSV-backed IPEDS institutions")
     finally:
         db.close()
 

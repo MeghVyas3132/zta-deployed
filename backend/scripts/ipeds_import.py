@@ -9,17 +9,8 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     Claim,
     ClaimSensitivity,
-    DataSource,
-    DataSourceStatus,
-    DataSourceType,
-    FieldVisibility,
-    PersonaType,
-    PlanTier,
-    SchemaField,
     Tenant,
     TenantStatus,
-    User,
-    UserStatus,
 )
 
 
@@ -32,7 +23,6 @@ CSV_PATHS = {
 }
 
 IPEDS_TENANT_ID = "33333333-3333-3333-3333-333333333333"
-IPEDS_SOURCE_ID = "dbbbbbbb-3333-3333-3333-333333333333"
 
 
 @dataclass(frozen=True)
@@ -138,124 +128,16 @@ def _build_institutions() -> list[IpedInstitution]:
     return institutions
 
 
-def _seed_tenant_users(db: Session) -> None:
+def _seed_tenant(db: Session) -> None:
     tenant = Tenant(
         id=IPEDS_TENANT_ID,
-        name="IPEDS Demo Consortium",
-        domain="ipeds.demo",
-        subdomain="ipeds-demo",
-        plan_tier=PlanTier.enterprise,
+        name="IPEDS CSV Claims Tenant",
+        domain="ipeds.local",
+        subdomain="ipeds",
         status=TenantStatus.active,
-        google_workspace_domain="ipeds.demo",
+        google_workspace_domain=None,
     )
     db.add(tenant)
-    db.flush()
-
-    users = [
-        User(
-            id="1111eeee-3333-3333-3333-333333333333",
-            tenant_id=tenant.id,
-            email="executive@ipeds.demo",
-            name="IPEDS Executive",
-            persona_type=PersonaType.executive,
-            department="EXEC",
-            external_id="IPEDS-EXE-001",
-            course_ids=[],
-            masked_fields=["student_pii", "salary_row"],
-            status=UserStatus.active,
-        ),
-        User(
-            id="2222aaaa-3333-3333-3333-333333333333",
-            tenant_id=tenant.id,
-            email="admissions.admin@ipeds.demo",
-            name="IPEDS Admissions Admin",
-            persona_type=PersonaType.admin_staff,
-            department="ADMISSIONS",
-            external_id="IPEDS-ADM-001",
-            admin_function="admissions",
-            course_ids=[],
-            masked_fields=[],
-            status=UserStatus.active,
-        ),
-        User(
-            id="3333iiii-3333-3333-3333-333333333333",
-            tenant_id=tenant.id,
-            email="it.head@ipeds.demo",
-            name="IPEDS IT Head",
-            persona_type=PersonaType.it_head,
-            department="IT",
-            external_id="IPEDS-ITH-001",
-            course_ids=[],
-            masked_fields=["*"],
-            status=UserStatus.active,
-        ),
-    ]
-    db.add_all(users)
-
-
-def _seed_source_schema(db: Session) -> None:
-    source = DataSource(
-        id=IPEDS_SOURCE_ID,
-        tenant_id=IPEDS_TENANT_ID,
-        name="IPEDS 2024 Sampled Institutions",
-        source_type=DataSourceType.ipeds_claims,
-        config_encrypted='{"source":"ipeds_2024_csv_bundle"}',
-        department_scope=["campus", "admissions", "admin"],
-        status=DataSourceStatus.connected,
-    )
-    db.add(source)
-
-    schema_fields = [
-        SchemaField(
-            tenant_id=IPEDS_TENANT_ID,
-            data_source_id=IPEDS_SOURCE_ID,
-            real_table="efia2024",
-            real_column="EFTEUG+EFTEGD+FTEDPP",
-            alias_token="ipeds_kpi_1",
-            display_name="Total FTE",
-            data_type="number",
-            visibility=FieldVisibility.visible,
-            pii_flag=False,
-            masked_for_personas=[],
-        ),
-        SchemaField(
-            tenant_id=IPEDS_TENANT_ID,
-            data_source_id=IPEDS_SOURCE_ID,
-            real_table="efia2024",
-            real_column="graduate_mix_delta",
-            alias_token="ipeds_kpi_2",
-            display_name="Graduate Mix Delta",
-            data_type="number",
-            visibility=FieldVisibility.visible,
-            pii_flag=False,
-            masked_for_personas=[],
-        ),
-        SchemaField(
-            tenant_id=IPEDS_TENANT_ID,
-            data_source_id=IPEDS_SOURCE_ID,
-            real_table="ef2024a",
-            real_column="EFTOTLT",
-            alias_token="ipeds_enroll_1",
-            display_name="Total Enrollment",
-            data_type="number",
-            visibility=FieldVisibility.visible,
-            pii_flag=False,
-            masked_for_personas=[],
-        ),
-        SchemaField(
-            tenant_id=IPEDS_TENANT_ID,
-            data_source_id=IPEDS_SOURCE_ID,
-            real_table="ic2024",
-            real_column="OPENADMP",
-            alias_token="ipeds_adm_1",
-            display_name="Open Admissions Coverage",
-            data_type="number",
-            visibility=FieldVisibility.visible,
-            pii_flag=False,
-            masked_for_personas=[],
-        ),
-    ]
-    db.add_all(schema_fields)
 
 
 def _build_claims(institutions: list[IpedInstitution]) -> list[Claim]:
@@ -357,7 +239,7 @@ def _build_claims(institutions: list[IpedInstitution]) -> list[Claim]:
     return claims
 
 
-def seed_ipeds_demo(db: Session) -> int:
+def seed_ipeds_claims(db: Session) -> int:
     if not _csv_exists():
         print("IPEDS seed skipped: one or more CSV files are missing")
         return 0
@@ -367,9 +249,8 @@ def seed_ipeds_demo(db: Session) -> int:
         print("IPEDS seed skipped: no matching institution rows were found")
         return 0
 
-    _seed_tenant_users(db)
-    _seed_source_schema(db)
+    _seed_tenant(db)
     db.flush()
     db.add_all(_build_claims(institutions))
-    print(f"Seeded IPEDS demo tenant with {len(institutions)} institutions")
+    print(f"Seeded IPEDS CSV claims with {len(institutions)} institutions")
     return len(institutions)
