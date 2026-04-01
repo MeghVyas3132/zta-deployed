@@ -75,7 +75,9 @@ class MockClaimsConnector(ConnectorBase):
         for claim_key, values in grouped.items():
             if plan.requires_aggregate and values:
                 if all(isinstance(v, (int, float)) for v in values if v is not None):
-                    if claim_key.endswith("count") or claim_key.startswith("count_"):
+                    # Sum counts and totals, average everything else
+                    if (claim_key.endswith("count") or claim_key.startswith("count_") or 
+                        claim_key.startswith("total_") or claim_key.endswith("_total")):
                         result[claim_key] = int(sum(v for v in values if isinstance(v, (int, float))))
                     else:
                         numeric_values = [float(v) for v in values if isinstance(v, (int, float))]

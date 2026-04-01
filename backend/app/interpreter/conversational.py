@@ -151,7 +151,10 @@ DATA_KEYWORDS: tuple[str, ...] = (
     "department", "dept", "performance",
     # Campus/Executive
     "kpi", "campus", "aggregate", "summary", "trend", "metric",
-    "total", "count", "average", "report",
+    "total", "count", "average", "report", "overview",
+    # IPEDS/Institution data
+    "institution", "hbcu", "public", "private", "demographics",
+    "size", "distribution", "sector", "college", "university",
     # Admin
     "audit", "schema", "connector",
     # General data queries

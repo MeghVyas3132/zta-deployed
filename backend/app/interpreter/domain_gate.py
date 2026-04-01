@@ -21,9 +21,9 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
     ),
     "finance": ("fee", "payment", "budget", "revenue", "p&l", "salary", "payroll", "invoice"),
     "hr": ("leave", "faculty record", "employee", "payslip", "attrition"),
-    "admissions": ("admission", "admissions", "applicant", "open admission"),
+    "admissions": ("admission", "admissions", "applicant", "applicants", "open admission"),
     "department": ("department", "dept", "faculty performance"),
-    "campus": ("cross campus", "campus aggregate", "enrollment", "enrolment", "headcount", "institution"),
+    "campus": ("cross campus", "campus aggregate", "enrollment", "enrolment", "enrolled", "headcount", "institution", "hbcu", "sector", "public", "private", "demographics", "size distribution", "size", "students"),
     "admin": ("audit", "schema", "connector", "kill switch", "data-sources", "audit-log"),
 }
 

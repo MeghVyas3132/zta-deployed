@@ -33,6 +33,10 @@ INTENT_TEMPLATES: dict[str, str] = {
     # Executive intents
     "executive_kpi": "The KPI value is [SLOT_1] with a trend change of [SLOT_2].",
     "executive_enrollment_overview": "Total enrollment is [SLOT_1] across [SLOT_2] institutions.",
+    # IPEDS institution demographics
+    "institution_demographics": "There are [SLOT_1] HBCU institutions, [SLOT_2] public institutions, and [SLOT_3] private institutions out of [SLOT_4] total.",
+    "institution_size_distribution": "Institution sizes: [SLOT_1] small, [SLOT_2] medium, [SLOT_3] large out of [SLOT_4] total.",
+    "institution_profile": "Institution profile: [SLOT_1]",
     # Admissions
     "admissions_overview": "Admissions metric is [SLOT_1] with [SLOT_2] applicants.",
 }

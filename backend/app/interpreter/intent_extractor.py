@@ -19,37 +19,14 @@ class IntentRule:
 
 INTENT_RULES: tuple[IntentRule, ...] = (
     # IPEDS institution-level data (always available)
+    # More specific intents first, then general ones
     IntentRule(
-        name="executive_kpi",
+        name="institution_size_distribution",
         domain="campus",
-        entity_type="executive_summary",
-        slot_keys=("kpi_value", "trend_delta"),
-        keywords=("kpi", "summary", "trend", "campus", "overview", "metrics", "performance"),
+        entity_type="institution_size_summary",
+        slot_keys=("small_count", "medium_count", "large_count", "total_institutions"),
+        keywords=("size", "small", "medium", "large", "distribution"),
         requires_aggregation=True,
-    ),
-    IntentRule(
-        name="executive_enrollment_overview",
-        domain="campus",
-        entity_type="institution_enrollment_summary",
-        slot_keys=("total_enrollment", "institution_count"),
-        keywords=("enrollment", "enrolment", "headcount", "student count", "institutions", "students"),
-        requires_aggregation=True,
-    ),
-    IntentRule(
-        name="admissions_overview",
-        domain="admissions",
-        entity_type="admin_function_summary",
-        slot_keys=("function_metric", "record_count"),
-        keywords=("admission", "admissions", "applicant", "open admission"),
-        requires_aggregation=True,
-    ),
-    IntentRule(
-        name="institution_profile",
-        domain="admin",
-        entity_type="institution_catalog",
-        slot_keys=("profile",),
-        keywords=("institution", "university", "college", "school", "profile", "info", "details"),
-        requires_aggregation=False,
     ),
     IntentRule(
         name="institution_demographics",
@@ -60,12 +37,36 @@ INTENT_RULES: tuple[IntentRule, ...] = (
         requires_aggregation=True,
     ),
     IntentRule(
-        name="institution_size_distribution",
+        name="executive_enrollment_overview",
         domain="campus",
-        entity_type="institution_size_summary",
-        slot_keys=("small_count", "medium_count", "large_count", "total_institutions"),
-        keywords=("size", "small", "medium", "large", "distribution"),
+        entity_type="institution_enrollment_summary",
+        slot_keys=("total_enrollment", "institution_count"),
+        keywords=("enrollment", "enrolment", "headcount", "student count", "students", "enrolled"),
         requires_aggregation=True,
+    ),
+    IntentRule(
+        name="executive_kpi",
+        domain="campus",
+        entity_type="executive_summary",
+        slot_keys=("kpi_value", "trend_delta"),
+        keywords=("kpi", "trend", "campus kpi", "overview", "metrics", "performance"),
+        requires_aggregation=True,
+    ),
+    IntentRule(
+        name="admissions_overview",
+        domain="admissions",
+        entity_type="admin_function_summary",
+        slot_keys=("function_metric", "record_count"),
+        keywords=("admission", "admissions", "applicant", "applicants", "open admission"),
+        requires_aggregation=True,
+    ),
+    IntentRule(
+        name="institution_profile",
+        domain="admin",
+        entity_type="institution_catalog",
+        slot_keys=("profile",),
+        keywords=("institution profile", "university profile", "college profile", "school profile", "info", "details"),
+        requires_aggregation=False,
     ),
     # Student-level data (requires tenant's own database, not IPEDS)
     IntentRule(
@@ -161,23 +162,27 @@ def extract_intent(
 ) -> InterpretedIntent:
     lower_prompt = aliased_prompt.lower()
 
-    if persona_type == "executive":
-        if any(keyword in lower_prompt for keyword in ("enrollment", "enrolment", "headcount", "student count", "institutions")):
-            rule = next(rule for rule in INTENT_RULES if rule.name == "executive_enrollment_overview")
-        else:
-            rule = next(rule for rule in INTENT_RULES if rule.name == "executive_kpi")
-    else:
-        rule = None
-        for candidate in INTENT_RULES:
-            if candidate.domain not in detected_domains:
-                continue
-            if any(keyword in lower_prompt for keyword in candidate.keywords):
-                rule = candidate
-                break
+    # Try to match a specific intent rule by keywords first
+    rule = None
+    for candidate in INTENT_RULES:
+        # Skip rules that don't match detected domains
+        if candidate.domain not in detected_domains:
+            continue
+        if any(keyword in lower_prompt for keyword in candidate.keywords):
+            rule = candidate
+            break
 
-        if rule is None:
+    # If no specific rule matched, use persona-aware fallbacks
+    if rule is None:
+        if persona_type == "executive":
+            # For executives, default to enrollment overview or KPI
+            if any(kw in lower_prompt for kw in ("enrollment", "enrolment", "headcount", "student count")):
+                rule = next(r for r in INTENT_RULES if r.name == "executive_enrollment_overview")
+            else:
+                rule = next(r for r in INTENT_RULES if r.name == "executive_kpi")
+        else:
             # Use domain-specific fallbacks that map to existing data
-            domain = detected_domains[0]
+            domain = detected_domains[0] if detected_domains else "academic"
             DOMAIN_FALLBACK_INTENTS: dict[str, str] = {
                 "campus": "executive_kpi",
                 "admissions": "admissions_overview",
