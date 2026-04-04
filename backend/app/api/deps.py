@@ -72,6 +72,8 @@ def get_scope_from_token(db: Session, token: str) -> ScopeContext:
             message="User account is invalid or inactive", code="USER_INVALID"
         )
 
+    _session_id = str(payload.get("session_id") or f"sid-{user_id[:8]}")
+
     scope = ScopeContext(
         tenant_id=tenant_id,
         user_id=user_id,
@@ -88,14 +90,11 @@ def get_scope_from_token(db: Session, token: str) -> ScopeContext:
         aggregate_only=bool(payload.get("aggregate_only", False)),
         own_id=str(payload.get("external_id", user.external_id)),
         chat_enabled=bool(payload.get("chat_enabled", True)),
-        session_id=str(payload.get("session_id", "")),
+        session_id=_session_id,
         session_ip=payload.get("session_ip"),
         device_trusted=bool(payload.get("device_trusted", True)),
         mfa_verified=bool(payload.get("mfa_verified", True)),
     )
-
-    if not scope.session_id:
-        scope.session_id = f"sid-{user_id[:8]}"
 
     _ensure_not_killed(scope)
     return scope

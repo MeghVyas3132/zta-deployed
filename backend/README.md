@@ -37,6 +37,9 @@ python scripts/seed_data.py
 
 This seeds 5,826 real institutions from IPEDS CSV data (87,390 claims).
 
+The repository now ignores large CSV files (`backend/*.csv`).
+Download the required IPEDS files (`ef2024a.csv`, `efia2024.csv`, `hd2024.csv`, `ic2024.csv`) into the `backend/` directory before running seed scripts.
+
 ## 5. Start API and Worker
 
 Terminal 1:

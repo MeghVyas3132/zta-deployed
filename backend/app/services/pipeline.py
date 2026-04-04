@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import logging
 import time
 import uuid
 from contextlib import contextmanager
@@ -9,7 +10,7 @@ from typing import cast
 from sqlalchemy.orm import Session
 
 from app.compiler.service import compiler_service
-from app.core.exceptions import AuthorizationError, ZTAError
+from app.core.exceptions import ZTAError
 from app.interpreter.cache import intent_cache_service
 from app.interpreter.conversational import detect_conversational_query, is_unclear_query
 from app.interpreter.service import interpreter_service
@@ -21,6 +22,8 @@ from app.services.pipeline_monitor import pipeline_monitor
 from app.slm.output_guard import output_guard
 from app.slm.simulator import slm_simulator
 from app.tool_layer.service import tool_layer_service
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineService:
@@ -68,6 +71,52 @@ class PipelineService:
             )
             raise
 
+    def _compute_latency_flag(self, latency_ms: int) -> str:
+        if 500 <= latency_ms <= 2000:
+            return "normal"
+        if latency_ms > 500:
+            return "high"
+        return "suspicious"
+
+    def _enqueue_audit_event(
+        self,
+        *,
+        scope: ScopeContext,
+        query_text: str,
+        intent_hash: str,
+        domains_accessed: list[str],
+        was_blocked: bool,
+        block_reason: str | None,
+        response_summary: str,
+        latency_ms: int,
+    ) -> None:
+        latency_flag = self._compute_latency_flag(latency_ms)
+        if latency_flag != "normal":
+            logger.warning(
+                "Non-normal latency detected for query audit event: latency_ms=%s, latency_flag=%s, tenant_id=%s, user_id=%s",
+                latency_ms,
+                latency_flag,
+                scope.tenant_id,
+                scope.user_id,
+            )
+
+        audit_service.enqueue(
+            AuditEvent(
+                tenant_id=scope.tenant_id,
+                user_id=scope.user_id,
+                session_id=scope.session_id,
+                query_text=query_text,
+                intent_hash=intent_hash,
+                domains_accessed=domains_accessed,
+                was_blocked=was_blocked,
+                block_reason=block_reason,
+                response_summary=response_summary,
+                latency_ms=latency_ms,
+                latency_flag=latency_flag,
+                created_at=datetime.now(tz=UTC),
+            )
+        )
+
     def process_query(
         self, db: Session, scope: ScopeContext, query_text: str
     ) -> PipelineResult:
@@ -111,6 +160,17 @@ class PipelineService:
                 pipeline_id=pipeline_id, status="success", total_duration_ms=latency_ms
             )
 
+            self._enqueue_audit_event(
+                scope=scope,
+                query_text=query_text,
+                intent_hash="conversational",
+                domains_accessed=[],
+                was_blocked=False,
+                block_reason=None,
+                response_summary=response_text,
+                latency_ms=latency_ms,
+            )
+
             return PipelineResult(
                 response_text=response_text,
                 source="conversational",
@@ -143,6 +203,17 @@ class PipelineService:
                 pipeline_id=pipeline_id, status="success", total_duration_ms=latency_ms
             )
 
+            self._enqueue_audit_event(
+                scope=scope,
+                query_text=query_text,
+                intent_hash="unclear",
+                domains_accessed=[],
+                was_blocked=False,
+                block_reason=None,
+                response_summary=response_text,
+                latency_ms=latency_ms,
+            )
+
             return PipelineResult(
                 response_text=response_text,
                 source="clarification",
@@ -169,9 +240,21 @@ class PipelineService:
                 template = interpreter_output.cached_template
                 cache_hit = template is not None
 
-            # Stage 3: SLM render (conditional on cache miss)
+            # Stage 3: Compiler (query plan generation)
+            with self._track_stage(pipeline_id, "compiler", 3):
+                compiled_query = compiler_service.compile_intent(
+                    scope, interpreter_output.intent
+                )
+
+            # Stage 4: Policy authorization (handles IT Head non-admin blocking)
+            with self._track_stage(pipeline_id, "policy_authorization", 4):
+                policy_engine.authorize(
+                    scope, interpreter_output.intent, compiled_query
+                )
+
+            # Stage 5: SLM render (conditional on cache miss)
             if not cache_hit:
-                with self._track_stage(pipeline_id, "slm_render", 3):
+                with self._track_stage(pipeline_id, "slm_render", 5):
                     template = slm_simulator.render_template(
                         interpreter_output.intent, scope
                     )
@@ -180,7 +263,7 @@ class PipelineService:
                 pipeline_monitor.emit_stage_event(
                     pipeline_id=pipeline_id,
                     stage_name="slm_render",
-                    stage_index=3,
+                    stage_index=5,
                     status="skipped",
                     metadata={"reason": "cache_hit"},
                 )
@@ -188,22 +271,10 @@ class PipelineService:
             # At this point template is guaranteed to exist (cache hit or SLM render).
             safe_template = cast(str, template)
 
-            # Stage 4: Output guard validation
-            with self._track_stage(pipeline_id, "output_guard", 4):
+            # Stage 6: Output guard validation
+            with self._track_stage(pipeline_id, "output_guard", 6):
                 output_guard.validate(
                     safe_template, interpreter_output.schema_real_identifiers
-                )
-
-            # Stage 5: Compiler (query plan generation)
-            with self._track_stage(pipeline_id, "compiler", 5):
-                compiled_query = compiler_service.compile_intent(
-                    scope, interpreter_output.intent
-                )
-
-            # Stage 6: Policy authorization (handles IT Head non-admin blocking)
-            with self._track_stage(pipeline_id, "policy_authorization", 6):
-                policy_engine.authorize(
-                    scope, interpreter_output.intent, compiled_query
                 )
 
             # Stage 7: Tool layer execution
@@ -260,20 +331,15 @@ class PipelineService:
 
             # Stage 12: Audit logging
             with self._track_stage(pipeline_id, "audit_logging", 12):
-                audit_service.enqueue(
-                    AuditEvent(
-                        tenant_id=scope.tenant_id,
-                        user_id=scope.user_id,
-                        session_id=scope.session_id,
-                        query_text=query_text,
-                        intent_hash=interpreter_output.intent_hash,
-                        domains_accessed=domains,
-                        was_blocked=False,
-                        block_reason=None,
-                        response_summary=final_response,
-                        latency_ms=latency_ms,
-                        created_at=datetime.now(tz=UTC),
-                    )
+                self._enqueue_audit_event(
+                    scope=scope,
+                    query_text=query_text,
+                    intent_hash=interpreter_output.intent_hash,
+                    domains_accessed=domains,
+                    was_blocked=False,
+                    block_reason=None,
+                    response_summary=final_response,
+                    latency_ms=latency_ms,
                 )
 
             # Emit pipeline completion
@@ -296,20 +362,15 @@ class PipelineService:
 
             # Still log audit even on error
             with self._track_stage(pipeline_id, "audit_logging_error", 12):
-                audit_service.enqueue(
-                    AuditEvent(
-                        tenant_id=scope.tenant_id,
-                        user_id=scope.user_id,
-                        session_id=scope.session_id,
-                        query_text=query_text,
-                        intent_hash=fallback_hash,
-                        domains_accessed=domains,
-                        was_blocked=True,
-                        block_reason=exc.code,
-                        response_summary=exc.message,
-                        latency_ms=latency_ms,
-                        created_at=datetime.now(tz=UTC),
-                    )
+                self._enqueue_audit_event(
+                    scope=scope,
+                    query_text=query_text,
+                    intent_hash=fallback_hash,
+                    domains_accessed=domains,
+                    was_blocked=True,
+                    block_reason=exc.code,
+                    response_summary=exc.message,
+                    latency_ms=latency_ms,
                 )
 
             # Emit pipeline failure
@@ -320,6 +381,30 @@ class PipelineService:
                 final_message=exc.message,
             )
 
+            raise
+
+        except Exception as exc:  # noqa: BLE001
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            fallback_hash = intent_hash or "0" * 64
+
+            with self._track_stage(pipeline_id, "audit_logging_error", 12):
+                self._enqueue_audit_event(
+                    scope=scope,
+                    query_text=query_text,
+                    intent_hash=fallback_hash,
+                    domains_accessed=domains,
+                    was_blocked=True,
+                    block_reason="UNEXPECTED_ERROR",
+                    response_summary=str(exc),
+                    latency_ms=latency_ms,
+                )
+
+            pipeline_monitor.emit_pipeline_complete(
+                pipeline_id=pipeline_id,
+                status="error",
+                total_duration_ms=latency_ms,
+                final_message=str(exc),
+            )
             raise
 
 

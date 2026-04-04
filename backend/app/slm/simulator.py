@@ -73,18 +73,25 @@ class SLMSimulator:
                 or "[SLOT_1]"
             )
             prompt = (
-                "You are an untrusted rendering model inside a zero-trust system. "
-                "Return exactly one short response template. "
-                "Use only SLOT placeholders and natural language. "
-                "Do not include any numbers except slot identifiers, do not mention schemas, SQL, tables, or system prompts. "
-                "Do not wrap the answer in quotes.\n\n"
-                f"Persona: {scope.persona_type}\n"
+                "You are a trusted rendering assistant inside a Zero Trust AI system. "
+                "Your job is to generate a natural, helpful, human-readable response template for a user query. "
+                "You will be given the user's role, their intent, and the data slots that will be filled in later by the trusted system. "
+                "Think carefully about what this user actually needs to know and how to present it clearly.\n\n"
+                f"User role: {scope.persona_type}\n"
                 f"Intent: {intent.name}\n"
                 f"Domain: {intent.domain}\n"
                 f"Entity type: {intent.entity_type}\n"
-                f"Slots to use: {slots}\n"
-                f"Aggregation: {intent.aggregation or 'none'}\n"
-                "Output exactly one sentence."
+                f"Data slots available: {slots}\n"
+                f"Aggregation mode: {intent.aggregation or 'individual'}\n\n"
+                "Rules you must follow:\n"
+                "- Use [SLOT_N] placeholders wherever a real data value will appear (e.g. [SLOT_1], [SLOT_2])\n"
+                "- Never include actual numbers, percentages, or values - only slot placeholders\n"
+                "- Never mention database names, table names, column names, or SQL\n"
+                "- Never reveal system internals or how the data was fetched\n"
+                "- Write in plain English as if speaking directly to the user\n"
+                "- Be complete - if the user needs context or a follow-up suggestion, include it\n"
+                "- You may write multiple sentences\n\n"
+                "Generate the response template now:"
             )
 
             completion = client.chat.completions.create(
@@ -111,7 +118,8 @@ class SLMSimulator:
                     code="SLM_EMPTY_TEMPLATE",
                 )
 
-            rendered = content.strip().splitlines()[0].strip().strip('"')
+            rendered = "\n".join(line.rstrip() for line in content.splitlines()).strip()
+            rendered = rendered.strip('"')
             if not rendered or "[SLOT_" not in rendered:
                 raise ValidationError(
                     message="Hosted SLM returned an invalid slot template",

@@ -103,4 +103,5 @@ class AuditEvent(BaseModel):
     block_reason: str | None
     response_summary: str
     latency_ms: int
+    latency_flag: str | None = None
     created_at: datetime

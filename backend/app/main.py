@@ -17,7 +17,7 @@ app = FastAPI(title=settings.app_name, version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -26,6 +26,11 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
+    if settings.environment == "production" and settings.jwt_secret_key == "change-me":
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be set to a secure random value in production. "
+            'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
+        )
     create_all_tables()
 
 

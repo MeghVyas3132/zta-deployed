@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from scripts.ipeds_import import IPEDS_TENANT_ID
+from app.core.config import get_settings as _get_settings
 
 from app.schemas.pipeline import CompiledQueryPlan, InterpretedIntent, ScopeContext
 
@@ -47,7 +47,9 @@ class QueryBuilder:
             signature_parts.append("course_id IN (:course_ids)")
 
         source_type = (
-            "ipeds_claims" if scope.tenant_id == IPEDS_TENANT_ID else "mock_claims"
+            "ipeds_claims"
+            if scope.tenant_id == _get_settings().ipeds_tenant_id
+            else "mock_claims"
         )
 
         return CompiledQueryPlan(

@@ -266,6 +266,7 @@ class AuditLog(Base):
     block_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
     response_summary: Mapped[str] = mapped_column(Text, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    latency_flag: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now
     )
