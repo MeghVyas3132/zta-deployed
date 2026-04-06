@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from contextlib import contextmanager
@@ -15,7 +16,13 @@ from app.interpreter.cache import intent_cache_service
 from app.interpreter.conversational import detect_conversational_query, is_unclear_query
 from app.interpreter.service import interpreter_service
 from app.policy.engine import policy_engine
-from app.schemas.pipeline import AuditEvent, PipelineResult, ScopeContext
+from app.schemas.pipeline import (
+    AuditEvent,
+    CompiledQueryPlan,
+    InterpreterOutput,
+    PipelineResult,
+    ScopeContext,
+)
 from app.services.audit_service import audit_service
 from app.services.history_service import history_service
 from app.services.pipeline_monitor import pipeline_monitor
@@ -116,6 +123,59 @@ class PipelineService:
                 created_at=datetime.now(tz=UTC),
             )
         )
+
+    def _is_multi_domain_prompt(self, query_text: str) -> bool:
+        lower_query = query_text.lower()
+        return bool(
+            re.search(
+                r"\b(and|also|plus|along with|as well as|both)\b",
+                lower_query,
+            )
+        )
+
+    def _select_secondary_domain(
+        self,
+        scope: ScopeContext,
+        primary_domain: str,
+        detected_domains: list[str],
+        query_text: str,
+    ) -> str | None:
+        if len(detected_domains) < 2:
+            return None
+        if not self._is_multi_domain_prompt(query_text):
+            return None
+
+        if scope.persona_type == "student":
+            supported_domains = {"academic", "finance"}
+        elif scope.persona_type == "faculty":
+            supported_domains = {"academic", "hr", "notices"}
+        else:
+            return None
+
+        if primary_domain not in supported_domains:
+            return None
+
+        for domain in detected_domains:
+            if domain != primary_domain and domain in supported_domains:
+                return domain
+
+        return None
+
+    def _compose_multi_domain_response(
+        self,
+        domain_responses: list[tuple[str, str]],
+    ) -> str:
+        if not domain_responses:
+            return ""
+        if len(domain_responses) == 1:
+            return domain_responses[0][1]
+
+        sections: list[str] = []
+        for domain, response_text in domain_responses:
+            label = domain.replace("_", " ").title()
+            sections.append(f"{label}: {response_text}")
+
+        return "\n\n".join(sections)
 
     def process_query(
         self, db: Session, scope: ScopeContext, query_text: str
@@ -226,15 +286,61 @@ class PipelineService:
         try:
             # Stage 1: Interpreter layer (sanitizer, domain gate, aliaser, intent extraction)
             with self._track_stage(pipeline_id, "interpreter", 1):
-                interpreter_output = interpreter_service.run(db, scope, query_text)
-                intent_hash = interpreter_output.intent_hash
-                domains = [interpreter_output.intent.domain]
+                primary_output = interpreter_service.run(db, scope, query_text)
+                intent_hash = primary_output.intent_hash
+                domains = [primary_output.intent.domain]
+                interpreter_outputs: list[InterpreterOutput] = [primary_output]
+
+                secondary_domain = self._select_secondary_domain(
+                    scope=scope,
+                    primary_domain=primary_output.intent.domain,
+                    detected_domains=primary_output.intent.detected_domains,
+                    query_text=query_text,
+                )
+                if secondary_domain is not None:
+                    secondary_output = interpreter_service.run_for_domain(
+                        db,
+                        scope,
+                        query_text,
+                        secondary_domain,
+                    )
+                    if secondary_output.intent.domain != primary_output.intent.domain:
+                        interpreter_outputs.append(secondary_output)
+                        domains.append(secondary_output.intent.domain)
+
+                domains = list(dict.fromkeys(domains))
+
+            interpreter_output = interpreter_outputs[0]
+
+            logger.info(
+                "Pipeline intent resolved: pipeline_id=%s tenant_id=%s user_id=%s intent=%s domain=%s detected_domains=%s slot_keys=%s",
+                pipeline_id,
+                scope.tenant_id,
+                scope.user_id,
+                interpreter_output.intent.name,
+                interpreter_output.intent.domain,
+                interpreter_output.intent.detected_domains,
+                interpreter_output.intent.slot_keys,
+            )
+
+            if len(interpreter_outputs) > 1:
+                logger.info(
+                    "Pipeline multi-domain merge enabled: pipeline_id=%s tenant_id=%s user_id=%s primary_domain=%s secondary_domain=%s",
+                    pipeline_id,
+                    scope.tenant_id,
+                    scope.user_id,
+                    interpreter_outputs[0].intent.domain,
+                    interpreter_outputs[1].intent.domain,
+                )
 
             DIRECT_RENDER_INTENTS = {"admin_audit_log", "admin_data_sources"}
-            if interpreter_output.intent.name in DIRECT_RENDER_INTENTS:
+            if (
+                len(interpreter_outputs) == 1
+                and interpreter_output.intent.name in DIRECT_RENDER_INTENTS
+            ):
                 with self._track_stage(pipeline_id, "compiler", 2):
                     compiled_query = compiler_service.compile_intent(
-                        scope, interpreter_output.intent
+                        scope, interpreter_output.intent, db
                     )
                 with self._track_stage(pipeline_id, "policy_authorization", 3):
                     policy_engine.authorize(
@@ -312,29 +418,77 @@ class PipelineService:
                 pipeline_id,
                 "intent_cache",
                 2,
-                {"intent_hash": interpreter_output.intent_hash[:16]},
+                {"intent_count": len(interpreter_outputs)},
             ):
-                template = interpreter_output.cached_template
-                cache_hit = template is not None
+                execution_units: list[dict[str, object]] = []
+                for output in interpreter_outputs:
+                    template = output.cached_template
+                    execution_units.append(
+                        {
+                            "interpreter_output": output,
+                            "template": template,
+                            "cache_hit": template is not None,
+                        }
+                    )
+
+            for unit in execution_units:
+                unit_output = cast(InterpreterOutput, unit["interpreter_output"])
+                unit_cache_hit = bool(unit["cache_hit"])
+                logger.info(
+                    "Pipeline cache %s: pipeline_id=%s tenant_id=%s intent_hash_prefix=%s domain=%s",
+                    "hit" if unit_cache_hit else "miss",
+                    pipeline_id,
+                    scope.tenant_id,
+                    unit_output.intent_hash[:16],
+                    unit_output.intent.domain,
+                )
 
             # Stage 3: Compiler (query plan generation)
-            with self._track_stage(pipeline_id, "compiler", 3):
-                compiled_query = compiler_service.compile_intent(
-                    scope, interpreter_output.intent
-                )
+            with self._track_stage(
+                pipeline_id,
+                "compiler",
+                3,
+                {"intent_count": len(execution_units)},
+            ):
+                for unit in execution_units:
+                    unit_output = cast(InterpreterOutput, unit["interpreter_output"])
+                    unit["compiled_query"] = compiler_service.compile_intent(
+                        scope,
+                        unit_output.intent,
+                        db,
+                    )
 
             # Stage 4: Policy authorization (handles IT Head non-admin blocking)
-            with self._track_stage(pipeline_id, "policy_authorization", 4):
-                policy_engine.authorize(
-                    scope, interpreter_output.intent, compiled_query
-                )
+            with self._track_stage(
+                pipeline_id,
+                "policy_authorization",
+                4,
+                {"intent_count": len(execution_units)},
+            ):
+                for unit in execution_units:
+                    unit_output = cast(InterpreterOutput, unit["interpreter_output"])
+                    compiled_query = cast(CompiledQueryPlan, unit["compiled_query"])
+                    policy_engine.authorize(
+                        scope,
+                        unit_output.intent,
+                        compiled_query,
+                    )
 
             # Stage 5: SLM render (conditional on cache miss)
-            if not cache_hit:
-                with self._track_stage(pipeline_id, "slm_render", 5):
-                    template = slm_simulator.render_template(
-                        interpreter_output.intent, scope
-                    )
+            units_to_render = [unit for unit in execution_units if not bool(unit["cache_hit"])]
+            if units_to_render:
+                with self._track_stage(
+                    pipeline_id,
+                    "slm_render",
+                    5,
+                    {"render_count": len(units_to_render)},
+                ):
+                    for unit in units_to_render:
+                        unit_output = cast(InterpreterOutput, unit["interpreter_output"])
+                        unit["template"] = slm_simulator.render_template(
+                            unit_output.intent,
+                            scope,
+                        )
             else:
                 # Emit skipped event if cache hit
                 pipeline_monitor.emit_stage_event(
@@ -345,49 +499,101 @@ class PipelineService:
                     metadata={"reason": "cache_hit"},
                 )
 
-            # At this point template is guaranteed to exist (cache hit or SLM render).
-            safe_template = cast(str, template)
-
             # Stage 6: Output guard validation
-            with self._track_stage(pipeline_id, "output_guard", 6):
-                output_guard.validate(
-                    safe_template,
-                    interpreter_output.schema_real_identifiers,
-                    expected_slot_count=len(interpreter_output.intent.slot_keys),
-                )
+            with self._track_stage(
+                pipeline_id,
+                "output_guard",
+                6,
+                {"intent_count": len(execution_units)},
+            ):
+                for unit in execution_units:
+                    unit_output = cast(InterpreterOutput, unit["interpreter_output"])
+                    safe_template = cast(str, unit["template"])
+                    output_guard.validate(
+                        safe_template,
+                        unit_output.schema_real_identifiers,
+                        expected_slot_count=len(unit_output.intent.slot_keys),
+                    )
 
             # Stage 7: Tool layer execution
-            with self._track_stage(pipeline_id, "tool_execution", 7):
-                values = tool_layer_service.execute(db, compiled_query)
+            with self._track_stage(
+                pipeline_id,
+                "tool_execution",
+                7,
+                {"intent_count": len(execution_units)},
+            ):
+                for unit in execution_units:
+                    compiled_query = cast(CompiledQueryPlan, unit["compiled_query"])
+                    unit["values"] = tool_layer_service.execute(db, compiled_query)
 
             # Stage 8: Field masking
-            with self._track_stage(pipeline_id, "field_masking", 8):
-                masked_values, masked_fields_applied = (
-                    policy_engine.apply_field_masking(values, scope.masked_fields)
-                )
+            with self._track_stage(
+                pipeline_id,
+                "field_masking",
+                8,
+                {"intent_count": len(execution_units)},
+            ):
+                for unit in execution_units:
+                    values = cast(dict[str, object], unit["values"])
+                    masked_values, masked_fields_applied = policy_engine.apply_field_masking(
+                        values,
+                        scope.masked_fields,
+                    )
+                    unit["masked_values"] = masked_values
+                    unit["masked_fields_applied"] = masked_fields_applied
 
             # Stage 9: Detokenization
-            with self._track_stage(pipeline_id, "detokenization", 9):
-                final_response = compiler_service.detokenize(
-                    template=safe_template,
-                    query_plan=compiled_query,
-                    values=masked_values,
-                    masked_fields_applied=masked_fields_applied,
-                )
+            with self._track_stage(
+                pipeline_id,
+                "detokenization",
+                9,
+                {"intent_count": len(execution_units)},
+            ):
+                domain_responses: list[tuple[str, str]] = []
+                for unit in execution_units:
+                    unit_output = cast(InterpreterOutput, unit["interpreter_output"])
+                    safe_template = cast(str, unit["template"])
+                    compiled_query = cast(CompiledQueryPlan, unit["compiled_query"])
+                    masked_values = cast(dict[str, object], unit["masked_values"])
+                    masked_fields_applied = cast(
+                        list[str],
+                        unit["masked_fields_applied"],
+                    )
+
+                    response_text = compiler_service.detokenize(
+                        template=safe_template,
+                        query_plan=compiled_query,
+                        values=masked_values,
+                        masked_fields_applied=masked_fields_applied,
+                    )
+                    unit["final_response"] = response_text
+                    domain_responses.append((unit_output.intent.domain, response_text))
+
+                final_response = self._compose_multi_domain_response(domain_responses)
 
             latency_ms = int((time.perf_counter() - started) * 1000)
 
             # Stage 10: Cache storage (conditional on cache miss)
-            if not cache_hit:
-                with self._track_stage(pipeline_id, "cache_storage", 10):
-                    intent_cache_service.set(
-                        db=db,
-                        tenant_id=scope.tenant_id,
-                        intent_hash=interpreter_output.intent_hash,
-                        normalized_intent=interpreter_output.intent.normalized(),
-                        response_template=safe_template,
-                        compiled_query=compiled_query.model_dump(mode="json"),
-                    )
+            cache_miss_units = [unit for unit in execution_units if not bool(unit["cache_hit"])]
+            if cache_miss_units:
+                with self._track_stage(
+                    pipeline_id,
+                    "cache_storage",
+                    10,
+                    {"cache_write_count": len(cache_miss_units)},
+                ):
+                    for unit in cache_miss_units:
+                        unit_output = cast(InterpreterOutput, unit["interpreter_output"])
+                        safe_template = cast(str, unit["template"])
+                        compiled_query = cast(CompiledQueryPlan, unit["compiled_query"])
+                        intent_cache_service.set(
+                            db=db,
+                            tenant_id=scope.tenant_id,
+                            intent_hash=unit_output.intent_hash,
+                            normalized_intent=unit_output.intent.normalized(),
+                            response_template=safe_template,
+                            compiled_query=compiled_query.model_dump(mode="json"),
+                        )
             else:
                 # Emit skipped event if cache hit
                 pipeline_monitor.emit_stage_event(
@@ -426,11 +632,21 @@ class PipelineService:
                 pipeline_id=pipeline_id, status="success", total_duration_ms=latency_ms
             )
 
+            primary_compiled_query = cast(
+                CompiledQueryPlan,
+                execution_units[0]["compiled_query"],
+            )
+            response_source = (
+                "multi_domain"
+                if len(execution_units) > 1
+                else primary_compiled_query.source_type
+            )
+
             return PipelineResult(
                 response_text=final_response,
-                source=compiled_query.source_type,
+                source=response_source,
                 latency_ms=latency_ms,
-                intent_hash=interpreter_output.intent_hash,
+                intent_hash=intent_hash,
                 domains_accessed=domains,
                 was_blocked=False,
             )
