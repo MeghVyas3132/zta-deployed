@@ -26,4 +26,4 @@ def test_ensure_required_slots_appends_missing_slots() -> None:
 
     assert "[SLOT_1]" in ensured
     assert "[SLOT_2]" in ensured
-    assert "Additional values:" in ensured
+    assert "Include also" in ensured

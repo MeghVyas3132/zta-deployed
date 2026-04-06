@@ -44,7 +44,9 @@ class Settings(BaseSettings):
 
     slm_provider: str = Field(default="simulator")
     slm_base_url: str = Field(default="https://integrate.api.nvidia.com/v1")
-    slm_api_key: str = Field(default="")
+    slm_api_key: str = Field(default="")  # Deprecated: use SLM_API_KEYS for multiple keys
+    slm_api_keys: str = Field(default="")  # Comma-separated list of API keys for round-robin
+    slm_requests_per_minute: int = Field(default=50)  # Rate limit per key per minute
     slm_model: str = Field(default="microsoft/phi-3-mini-128k-instruct")
     slm_temperature: float = Field(default=0.7)
     slm_top_p: float = Field(default=0.95)

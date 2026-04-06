@@ -7,9 +7,13 @@ from typing import Any
 from app.core.config import get_settings
 from app.core.exceptions import ValidationError
 from app.schemas.pipeline import InterpretedIntent, ScopeContext
+from app.slm.key_manager import get_key_manager, AdaptiveKeyManager
 
 logger = logging.getLogger(__name__)
 UNSAFE_HINTS = ("select ", " from ", "schema", "table", "system prompt")
+
+# Maximum retries when rotating through API keys on rate limit
+MAX_KEY_ROTATION_RETRIES = 5
 
 
 class SLMSimulator:
@@ -31,14 +35,55 @@ class SLMSimulator:
     def __init__(self) -> None:
         self.settings = get_settings()
         self._client: Any | None = None
+        self._key_manager: AdaptiveKeyManager | None = None
+        self._current_client_key: str | None = None
+        self._current_key_index: int | None = None
         self._validate_slm_config()
 
     def _validate_slm_config(self) -> None:
         """Validate SLM is properly configured at startup."""
-        if not self.settings.slm_api_key:
-            logger.warning(
-                "SLM_API_KEY not configured - SLM template generation will fail"
+        # Parse multiple API keys if configured
+        api_keys = self._parse_api_keys()
+
+        if api_keys:
+            self._key_manager = get_key_manager(
+                api_keys,
+                requests_per_minute=self.settings.slm_requests_per_minute,
             )
+            logger.info(
+                f"SLM configured with {len(api_keys)} API keys "
+                f"(adaptive rate-aware, {self.settings.slm_requests_per_minute} req/min/key)"
+            )
+        elif self.settings.slm_api_key:
+            logger.info("SLM configured with single API key")
+        else:
+            logger.warning(
+                "SLM_API_KEY/SLM_API_KEYS not configured - SLM template generation will fail"
+            )
+
+    def _parse_api_keys(self) -> list[str]:
+        """Parse comma-separated API keys from SLM_API_KEYS setting."""
+        if not self.settings.slm_api_keys:
+            return []
+
+        keys = [k.strip() for k in self.settings.slm_api_keys.split(",") if k.strip()]
+        return keys
+
+    def _get_active_api_key(self) -> tuple[str | None, int | None]:
+        """
+        Get the best available API key using adaptive selection.
+
+        Returns:
+            Tuple of (api_key, key_index) or (None, None) if unavailable
+        """
+        if self._key_manager:
+            try:
+                key, index = self._key_manager.get_best_key()
+                return key, index
+            except RuntimeError as e:
+                logger.error(f"All API keys exhausted: {e}")
+                return None, None
+        return self.settings.slm_api_key or None, None
 
     @staticmethod
     def _trim_after_last_slot_sentence(content: str) -> str:
@@ -149,19 +194,97 @@ class SLMSimulator:
     def _render_with_hosted_slm(
         self, intent: InterpretedIntent, scope: ScopeContext
     ) -> str:
-        if not self.settings.slm_api_key:
+        active_key, key_index = self._get_active_api_key()
+        if not active_key:
             raise ValidationError(
-                message="Hosted SLM client is not available",
+                message="Hosted SLM client is not available (no API keys configured or all rate-limited)",
                 code="SLM_CLIENT_UNAVAILABLE",
             )
 
+        retries = 0
+        max_retries = MAX_KEY_ROTATION_RETRIES if self._key_manager else 1
+        self._current_key_index = key_index
+
+        while retries < max_retries:
+            try:
+                client = self._get_client()
+                if client is None:
+                    raise ValidationError(
+                        message="Hosted SLM client could not be initialized",
+                        code="SLM_CLIENT_UNAVAILABLE",
+                    )
+
+                result = self._call_slm_api(client, intent, scope)
+
+                # Record successful request for rate tracking
+                if self._key_manager and self._current_key_index is not None:
+                    self._key_manager.record_request(self._current_key_index)
+
+                return result
+
+            except Exception as exc:
+                if self._is_rate_limit_error(exc) and self._key_manager:
+                    # Mark current key as rate-limited
+                    if self._current_key_index is not None:
+                        cooldown = self._extract_retry_after(exc)
+                        self._key_manager.mark_rate_limited(self._current_key_index, cooldown)
+
+                    # Invalidate current client and get new key
+                    self._client = None
+                    self._current_client_key = None
+
+                    retries += 1
+                    if retries < max_retries:
+                        # Get next best key
+                        try:
+                            active_key, key_index = self._get_active_api_key()
+                            self._current_key_index = key_index
+                            if active_key:
+                                logger.info(
+                                    f"Retrying with key {key_index + 1} "
+                                    f"(attempt {retries + 1}/{max_retries})"
+                                )
+                                continue
+                        except RuntimeError:
+                            pass
+                        logger.error("No more API keys available for retry")
+
+                raise
+
+        raise ValidationError(
+            message="All API keys exhausted after rate limiting",
+            code="SLM_ALL_KEYS_RATE_LIMITED",
+        )
+
+    def _is_rate_limit_error(self, exc: Exception) -> bool:
+        """Check if an exception is a rate limit error (HTTP 429)."""
+        exc_str = str(exc).lower()
+        if "429" in exc_str or "rate limit" in exc_str or "too many requests" in exc_str:
+            return True
+
+        # Check for OpenAI-specific rate limit exception
+        if hasattr(exc, "status_code") and exc.status_code == 429:
+            return True
+
+        return False
+
+    def _extract_retry_after(self, exc: Exception) -> int | None:
+        """Extract retry-after header value from rate limit response."""
+        # Try to get retry-after from exception if available
+        if hasattr(exc, "response") and hasattr(exc.response, "headers"):
+            retry_after = exc.response.headers.get("retry-after")
+            if retry_after:
+                try:
+                    return int(retry_after)
+                except ValueError:
+                    pass
+        return None
+
+    def _call_slm_api(
+        self, client: Any, intent: InterpretedIntent, scope: ScopeContext
+    ) -> str:
+        """Make the actual SLM API call and process the response."""
         try:
-            client = self._get_client()
-            if client is None:
-                raise ValidationError(
-                    message="Hosted SLM client could not be initialized",
-                    code="SLM_CLIENT_UNAVAILABLE",
-                )
 
             SLOT_DISPLAY_NAMES = {
                 "function_metric": "operational metric value",
@@ -342,7 +465,13 @@ class SLMSimulator:
             ) from exc
 
     def _get_client(self) -> Any | None:
-        if self._client is None:
+        """Get or create OpenAI client with current active API key."""
+        current_key, key_index = self._get_active_api_key()
+        if not current_key:
+            return None
+
+        # Recreate client if key has changed (due to rotation)
+        if self._client is None or self._current_client_key != current_key:
             try:
                 import openai
             except ImportError:
@@ -350,8 +479,12 @@ class SLMSimulator:
 
             self._client = openai.OpenAI(
                 base_url=self.settings.slm_base_url,
-                api_key=self.settings.slm_api_key,
+                api_key=current_key,
             )
+            self._current_client_key = current_key
+            self._current_key_index = key_index
+            if self._key_manager and key_index is not None:
+                logger.debug(f"Created OpenAI client with key {key_index + 1}/{self._key_manager.total_keys}")
         return self._client
 
 

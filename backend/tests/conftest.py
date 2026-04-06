@@ -77,14 +77,14 @@ def mock_slm_client():
 
     mock_client.chat.completions.create = MagicMock(side_effect=create_completion)
 
-    # Directly inject mock client
-    original_client = slm_simulator._client
-    slm_simulator._client = mock_client
+    # Patch _get_client to always return mock - this prevents real API calls
+    original_get_client = slm_simulator._get_client
+    slm_simulator._get_client = lambda: mock_client
 
     yield mock_client
 
     # Reset after test
-    slm_simulator._client = original_client
+    slm_simulator._get_client = original_get_client
 
 
 @pytest.fixture
