@@ -3,10 +3,12 @@ name: CD Deploy to EC2
 on:
   workflow_run:
     workflows:
-      - Backend CI - FastAPI + Celery
-    branches: [ec2-main]        # ← ADD THIS: only watch ec2-main branch CI runs
+      - "Backend CI - FastAPI + Celery"
+    branches:
+      - ec2-main
     types:
       - completed
+
   workflow_dispatch:
 
 jobs:
