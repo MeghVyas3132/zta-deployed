@@ -240,10 +240,16 @@ class SLMSimulator:
                             active_key, key_index = self._get_active_api_key()
                             self._current_key_index = key_index
                             if active_key:
-                                logger.info(
-                                    f"Retrying with key {key_index + 1} "
-                                    f"(attempt {retries + 1}/{max_retries})"
-                                )
+                                if key_index is not None:
+                                    logger.info(
+                                        f"Retrying with key {key_index + 1} "
+                                        f"(attempt {retries + 1}/{max_retries})"
+                                    )
+                                else:
+                                    logger.info(
+                                        f"Retrying with fallback key "
+                                        f"(attempt {retries + 1}/{max_retries})"
+                                    )
                                 continue
                         except RuntimeError:
                             pass

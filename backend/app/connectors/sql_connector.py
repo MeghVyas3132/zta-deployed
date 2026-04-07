@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import Any
 
 from sqlalchemy import MetaData, Table, create_engine, select, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -65,13 +66,22 @@ class SQLConnector(ConnectorBase):
             else None
         )
         self.column_map = self._build_column_map(column_map or {})
-        self.engine = create_engine(
-            self.connection_url, future=True, pool_pre_ping=True
-        )
+        self._engine: Engine | None = None
+
+    @property
+    def engine(self) -> Engine:
+        return self._get_engine()
+
+    def _get_engine(self) -> Engine:
+        if self._engine is None:
+            self._engine = create_engine(
+                self.connection_url, future=True, pool_pre_ping=True
+            )
+        return self._engine
 
     def connect(self) -> None:
         try:
-            with self.engine.connect() as conn:
+            with self._get_engine().connect() as conn:
                 conn.execute(text("SELECT 1"))
         except SQLAlchemyError as exc:
             raise ValidationError(
@@ -86,7 +96,7 @@ class SQLConnector(ConnectorBase):
             "WHERE table_schema NOT IN ('pg_catalog', 'information_schema')"
         )
         try:
-            with self.engine.connect() as conn:
+            with self._get_engine().connect() as conn:
                 rows = conn.execute(query).mappings().all()
                 return [dict(row) for row in rows]
         except SQLAlchemyError as exc:
@@ -134,7 +144,7 @@ class SQLConnector(ConnectorBase):
             stmt = stmt.where(self._column(table, "course_id").in_(course_ids))
 
         try:
-            with self.engine.connect() as conn:
+            with self._get_engine().connect() as conn:
                 rows = conn.execute(stmt).mappings().all()
         except SQLAlchemyError as exc:
             raise ValidationError(
@@ -182,7 +192,7 @@ class SQLConnector(ConnectorBase):
                 self.claims_table,
                 metadata,
                 schema=self.claims_schema,
-                autoload_with=self.engine,
+                autoload_with=self._get_engine(),
             )
         except SQLAlchemyError as exc:
             raise ValidationError(

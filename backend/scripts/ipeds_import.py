@@ -323,6 +323,7 @@ def _domain_keyword_defaults() -> dict[str, list[str]]:
             "attrition",
             "headcount",
             "payslip",
+            "salary",
         ],
         "admissions": [
             "admission",

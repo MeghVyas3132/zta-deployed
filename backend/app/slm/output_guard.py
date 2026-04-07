@@ -47,7 +47,11 @@ class OutputGuard:
                 )
 
         slots = re.findall(r"\[SLOT_\d+\]", template)
-        slot_numbers = set(int(re.search(r"\d+", s).group()) for s in slots)
+        slot_numbers = {
+            int(match.group())
+            for s in slots
+            if (match := re.search(r"\d+", s)) is not None
+        }
         if expected_slot_count > 0 and max(slot_numbers, default=0) > expected_slot_count:
             raise UnsafeOutputError(
                 message=f"Template contains more slots than defined ({max(slot_numbers)} > {expected_slot_count})",

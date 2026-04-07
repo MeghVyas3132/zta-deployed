@@ -352,28 +352,38 @@ class PipelineService:
                 latency_ms = int((time.perf_counter() - started) * 1000)
 
                 if interpreter_output.intent.name == "admin_audit_log":
-                    entries = values.get("entries", [])
+                    raw_entries = values.get("entries", [])
+                    entries = (
+                        cast(list[dict[str, object]], raw_entries)
+                        if isinstance(raw_entries, list)
+                        else []
+                    )
                     if not entries:
                         final_response = "No audit log entries found."
                     else:
                         lines = []
                         for i, item in enumerate(entries[:10], 1):
-                            query = item.get("query_text", "unknown")
-                            blocked = item.get("was_blocked", False)
+                            query = str(item.get("query_text", "unknown"))
+                            blocked = bool(item.get("was_blocked", False))
                             timestamp = str(item.get("created_at", ""))[:16]
                             status = "BLOCKED" if blocked else "ALLOWED"
                             lines.append(f"{i}. [{status}] {query} ({timestamp})")
                         final_response = "Recent audit log entries:\n" + "\n".join(lines)
                 elif interpreter_output.intent.name == "admin_data_sources":
-                    sources = values.get("sources", [])
+                    raw_sources = values.get("sources", [])
+                    sources = (
+                        cast(list[dict[str, object]], raw_sources)
+                        if isinstance(raw_sources, list)
+                        else []
+                    )
                     if not sources:
                         final_response = "No data sources configured."
                     else:
                         lines = []
                         for i, item in enumerate(sources, 1):
-                            name = item.get("name", "unknown")
-                            status = item.get("status", "unknown")
-                            source_type = item.get("source_type", "")
+                            name = str(item.get("name", "unknown"))
+                            status = str(item.get("status", "unknown"))
+                            source_type = str(item.get("source_type", ""))
                             lines.append(f"{i}. {name} ({source_type}) — {status}")
                         final_response = "Connected data sources:\n" + "\n".join(lines)
 
