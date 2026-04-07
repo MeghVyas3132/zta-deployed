@@ -10,7 +10,7 @@ from app.interpreter.aliaser import apply_schema_aliasing
 from app.interpreter.cache import intent_cache_service
 from app.interpreter.domain_gate import detect_domains, enforce_domain_gate
 from app.interpreter.intent_extractor import extract_intent
-from app.interpreter.registry import load_domain_keywords, load_intent_rules
+from app.interpreter.registry import load_domain_keywords, load_intent_rules, load_intent_detection_keywords
 from app.interpreter.sanitizer import sanitize_prompt
 from app.schemas.pipeline import InterpreterOutput, ScopeContext
 
@@ -137,6 +137,8 @@ class InterpreterService:
         )
 
         intent_rules = load_intent_rules(db, scope.tenant_id)
+        detection_keywords = load_intent_detection_keywords(db, scope.tenant_id)
+        
         intent = extract_intent(
             raw_prompt=prompt,
             sanitized_prompt=sanitized_prompt,
@@ -144,6 +146,7 @@ class InterpreterService:
             detected_domains=detected_domains,
             persona_type=scope.persona_type,
             intent_rules=intent_rules,
+            detection_keywords=detection_keywords,
         )
 
         if scope.persona_type == "executive":

@@ -418,6 +418,43 @@ class AuditLog(Base):
     )
 
 
+class IntentDetectionKeyword(Base):
+    __tablename__ = "intent_detection_keywords"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id"), nullable=False
+    )
+    intent_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    keyword_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    keyword: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now
+    )
+
+
+Index(
+    "ix_intent_detection_keywords_tenant_intent_type",
+    IntentDetectionKeyword.tenant_id,
+    IntentDetectionKeyword.intent_name,
+    IntentDetectionKeyword.keyword_type,
+    unique=False,
+)
+Index(
+    "ix_intent_detection_keywords_tenant_keyword",
+    IntentDetectionKeyword.tenant_id,
+    IntentDetectionKeyword.intent_name,
+    IntentDetectionKeyword.keyword,
+    IntentDetectionKeyword.keyword_type,
+    unique=True,
+)
+
+
 class IntentCacheEntry(Base):
     __tablename__ = "intent_cache"
 

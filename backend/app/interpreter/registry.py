@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationError
-from app.db.models import DomainKeyword, IntentDefinition
+from app.db.models import DomainKeyword, IntentDefinition, IntentDetectionKeyword
 from app.interpreter.domain_gate import AGGREGATION_MODIFIERS
 from app.interpreter.intent_extractor import IntentRule
 
@@ -93,3 +93,48 @@ def load_intent_rules(db: Session, tenant_id: str) -> tuple[IntentRule, ...]:
         )
 
     return tuple(loaded_rules)
+
+
+def load_intent_detection_keywords(
+    db: Session,
+    tenant_id: str,
+) -> dict[str, dict[str, list[str]]]:
+    """Load intent detection keywords from database.
+
+    Returns a nested dictionary mapping:
+        intent_name -> keyword_type -> list of keywords
+
+    Example:
+        {
+            "student_grades": {
+                "grade_marker": ["gpa", "grade", "grades", "passed subject", "passed subjects", "marks"],
+                "subject_marker": ["subject", "course"]
+            },
+            "student_attendance": {
+                "attendance_marker": ["attendance", "present", "absent"]
+            }
+        }
+
+    Args:
+        db: SQLAlchemy session
+        tenant_id: Tenant ID to filter keywords
+
+    Returns:
+        Nested dictionary of detection keywords keyed by intent_name and keyword_type
+    """
+    rows = db.scalars(
+        select(IntentDetectionKeyword).where(
+            IntentDetectionKeyword.tenant_id == tenant_id,
+            IntentDetectionKeyword.is_active.is_(True),
+        )
+    ).all()
+
+    result: dict[str, dict[str, list[str]]] = {}
+    for row in rows:
+        if row.intent_name not in result:
+            result[row.intent_name] = {}
+        if row.keyword_type not in result[row.intent_name]:
+            result[row.intent_name][row.keyword_type] = []
+        result[row.intent_name][row.keyword_type].append(row.keyword)
+
+    return result

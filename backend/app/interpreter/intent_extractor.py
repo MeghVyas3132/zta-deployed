@@ -126,9 +126,12 @@ def extract_intent(
     detected_domains: list[str],
     persona_type: str,
     intent_rules: tuple[IntentRule, ...] | None = None,
+    detection_keywords: dict[str, dict[str, list[str]]] | None = None,
 ) -> InterpretedIntent:
     lower_prompt = aliased_prompt.lower()
     rules = intent_rules or ()
+    detection_keywords = detection_keywords or {}
+
     if not rules:
         raise ValidationError(
             message="No intent rules are configured for this tenant",
@@ -140,9 +143,10 @@ def extract_intent(
     rule: IntentRule | None = None
     best_score: tuple[int, int, int, int, int] | None = None
 
-    # Targeted safety override for common grade-vs-attendance collisions.
+    # Targeted safety override for grade-vs-attendance collisions.
     # If grade semantics are explicit, prefer grade intent over generic subject/attendance rules.
-    grade_markers = ("gpa", "grade", "grades", "passed subject", "passed subjects", "marks")
+    # Grade markers loaded from database; allows tenant-specific customization.
+    grade_markers = detection_keywords.get("student_grades", {}).get("grade_marker", [])
     has_grade_marker = any(marker in lower_prompt for marker in grade_markers)
 
     if has_grade_marker and persona_type == "student":

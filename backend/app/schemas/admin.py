@@ -63,3 +63,27 @@ class DomainSourceBindingUpsertRequest(BaseModel):
     source_type: str | None = None
     data_source_id: str | None = None
     is_active: bool = True
+
+
+class IntentDetectionKeywordUpsertRequest(BaseModel):
+    """Request schema for creating/updating intent detection keywords.
+
+    Detection keywords are used to identify and route specific intents.
+    For example, grade markers (gpa, grade, grades, etc.) are used to route
+    student queries to the student_grades intent.
+
+    Example:
+        {
+            "intent_name": "student_grades",
+            "keyword_type": "grade_marker",
+            "keyword": "gpa",
+            "priority": 100,
+            "is_active": true
+        }
+    """
+
+    intent_name: str
+    keyword_type: str
+    keyword: str
+    priority: int = 100
+    is_active: bool = True

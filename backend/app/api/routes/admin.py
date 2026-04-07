@@ -21,6 +21,7 @@ from app.db.models import (
     DataSourceType,
     DomainKeyword,
     IntentDefinition,
+    IntentDetectionKeyword,
     IntentCacheEntry,
     PersonaType,
     RolePolicy,
@@ -34,6 +35,7 @@ from app.schemas.admin import (
     DomainSourceBindingUpsertRequest,
     DomainKeywordUpsertRequest,
     IntentDefinitionUpsertRequest,
+    IntentDetectionKeywordUpsertRequest,
     KillSwitchRequest,
     RolePolicyUpsertRequest,
     UserUpdateRequest,
@@ -546,6 +548,162 @@ def deactivate_intent_definition(
     db.commit()
     db.refresh(row)
     return _serialize_intent_definition(row)
+
+
+def _serialize_intent_detection_keyword(
+    row: IntentDetectionKeyword,
+) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "intent_name": row.intent_name,
+        "keyword_type": row.keyword_type,
+        "keyword": row.keyword,
+        "priority": row.priority,
+        "is_active": row.is_active,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+@router.get("/intent-detection-keywords")
+def list_intent_detection_keywords(
+    intent_name: str | None = Query(None),
+    keyword_type: str | None = Query(None),
+    scope: ScopeContext = Depends(require_it_head),
+    db: Session = Depends(get_db),
+):
+    """List intent detection keywords, optionally filtered by intent_name or keyword_type.
+
+    Detection keywords are used to identify and route specific intents.
+    Example: grade markers (gpa, grade, grades) route to student_grades intent.
+    """
+    q = select(IntentDetectionKeyword).where(
+        IntentDetectionKeyword.tenant_id == scope.tenant_id
+    )
+
+    if intent_name:
+        q = q.where(
+            IntentDetectionKeyword.intent_name
+            == intent_name.strip().lower()
+        )
+    if keyword_type:
+        q = q.where(
+            IntentDetectionKeyword.keyword_type
+            == keyword_type.strip().lower()
+        )
+
+    rows = db.scalars(
+        q.order_by(
+            IntentDetectionKeyword.intent_name,
+            IntentDetectionKeyword.keyword_type,
+            IntentDetectionKeyword.keyword,
+        )
+    ).all()
+    return [_serialize_intent_detection_keyword(row) for row in rows]
+
+
+@router.post("/intent-detection-keywords")
+def upsert_intent_detection_keyword(
+    payload: IntentDetectionKeywordUpsertRequest,
+    scope: ScopeContext = Depends(require_it_head),
+    db: Session = Depends(get_db),
+):
+    """Create or update an intent detection keyword.
+
+    Detection keywords enable database-driven intent routing. For example,
+    adding "gpa" as a grade_marker for student_grades allows grade-related
+    queries to be routed to the correct intent without code changes.
+
+    The combination of (tenant_id, intent_name, keyword_type, keyword)
+    must be unique.
+    """
+    intent_name = payload.intent_name.strip().lower()
+    keyword_type = payload.keyword_type.strip().lower()
+    keyword = payload.keyword.strip().lower()
+
+    if not intent_name:
+        raise ValidationError(
+            message="intent_name is required",
+            code="INTENT_NAME_REQUIRED",
+        )
+    if not keyword_type:
+        raise ValidationError(
+            message="keyword_type is required",
+            code="KEYWORD_TYPE_REQUIRED",
+        )
+    if not keyword:
+        raise ValidationError(
+            message="keyword is required",
+            code="KEYWORD_REQUIRED",
+        )
+    if payload.priority < 0:
+        raise ValidationError(
+            message="priority must be >= 0",
+            code="INVALID_PRIORITY",
+        )
+
+    existing = db.scalar(
+        select(IntentDetectionKeyword).where(
+            and_(
+                IntentDetectionKeyword.tenant_id == scope.tenant_id,
+                IntentDetectionKeyword.intent_name == intent_name,
+                IntentDetectionKeyword.keyword_type == keyword_type,
+                IntentDetectionKeyword.keyword == keyword,
+            )
+        )
+    )
+
+    if existing:
+        existing.priority = payload.priority
+        existing.is_active = payload.is_active
+        row = existing
+    else:
+        row = IntentDetectionKeyword(
+            tenant_id=scope.tenant_id,
+            intent_name=intent_name,
+            keyword_type=keyword_type,
+            keyword=keyword,
+            priority=payload.priority,
+            is_active=payload.is_active,
+        )
+
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _serialize_intent_detection_keyword(row)
+
+
+@router.delete("/intent-detection-keywords/{keyword_id}")
+def deactivate_intent_detection_keyword(
+    keyword_id: str,
+    scope: ScopeContext = Depends(require_it_head),
+    db: Session = Depends(get_db),
+):
+    """Deactivate (soft-delete) an intent detection keyword.
+
+    The keyword is marked as inactive but not permanently deleted from the
+    database, preserving audit trail.
+    """
+    row = db.scalar(
+        select(IntentDetectionKeyword).where(
+            and_(
+                IntentDetectionKeyword.tenant_id == scope.tenant_id,
+                IntentDetectionKeyword.id == keyword_id,
+            )
+        )
+    )
+
+    if not row:
+        raise ValidationError(
+            message="Intent detection keyword not found",
+            code="KEYWORD_NOT_FOUND",
+        )
+
+    row.is_active = False
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _serialize_intent_detection_keyword(row)
 
 
 @router.get("/domain-source-bindings")

@@ -20,6 +20,7 @@ from app.db.models import (
     DomainSourceBinding,
     DomainKeyword,
     IntentDefinition,
+    IntentDetectionKeyword,
     PersonaType,
     RolePolicy,
     SchemaField,
@@ -380,6 +381,100 @@ def _domain_keyword_defaults() -> dict[str, list[str]]:
             "bulletin",
         ],
     }
+
+
+def _intent_detection_keyword_defaults() -> list[dict[str, object]]:
+    """Return default intent detection keywords for semantic routing.
+
+    Detection keywords allow specific intents to be detected based on keyword
+    patterns in user prompts. For example, "grade" or "gpa" keywords trigger
+    the student_grades intent.
+
+    Each entry defines:
+    - intent_name: target intent (e.g., "student_grades")
+    - keyword_type: category of keyword (e.g., "grade_marker")
+    - keyword: actual keyword to detect
+    """
+    return [
+        # Grade detection
+        {
+            "intent": "student_grades",
+            "keyword_type": "grade_marker",
+            "keyword": "gpa",
+        },
+        {
+            "intent": "student_grades",
+            "keyword_type": "grade_marker",
+            "keyword": "grade",
+        },
+        {
+            "intent": "student_grades",
+            "keyword_type": "grade_marker",
+            "keyword": "grades",
+        },
+        {
+            "intent": "student_grades",
+            "keyword_type": "grade_marker",
+            "keyword": "passed subject",
+        },
+        {
+            "intent": "student_grades",
+            "keyword_type": "grade_marker",
+            "keyword": "passed subjects",
+        },
+        {
+            "intent": "student_grades",
+            "keyword_type": "grade_marker",
+            "keyword": "marks",
+        },
+        # Attendance detection
+        {
+            "intent": "student_attendance",
+            "keyword_type": "attendance_marker",
+            "keyword": "attendance",
+        },
+        {
+            "intent": "student_attendance",
+            "keyword_type": "attendance_marker",
+            "keyword": "present",
+        },
+        {
+            "intent": "student_attendance",
+            "keyword_type": "attendance_marker",
+            "keyword": "absent",
+        },
+        {
+            "intent": "student_attendance",
+            "keyword_type": "attendance_marker",
+            "keyword": "skip",
+        },
+        # Fee detection
+        {
+            "intent": "student_fee",
+            "keyword_type": "fee_marker",
+            "keyword": "fee",
+        },
+        {
+            "intent": "student_fee",
+            "keyword_type": "fee_marker",
+            "keyword": "balance",
+        },
+        {
+            "intent": "student_fee",
+            "keyword_type": "fee_marker",
+            "keyword": "payment",
+        },
+        {
+            "intent": "student_fee",
+            "keyword_type": "fee_marker",
+            "keyword": "tuition",
+        },
+        {
+            "intent": "student_fee",
+            "keyword_type": "fee_marker",
+            "keyword": "invoice",
+        },
+    ]
 
 
 def _intent_defaults() -> list[dict[str, object]]:
@@ -879,10 +974,12 @@ def _upsert_runtime_config(db: Session, tenant_id: str) -> dict[str, int]:
     role_defaults = _role_policy_defaults()
     keyword_defaults = _domain_keyword_defaults()
     intent_defaults = _intent_defaults()
+    detection_keyword_defaults = _intent_detection_keyword_defaults()
 
     role_policies_seeded = 0
     domain_keywords_seeded = 0
     intent_definitions_seeded = 0
+    intent_detection_keywords_seeded = 0
     domain_source_bindings_seeded = 0
 
     for item in role_defaults:
@@ -975,6 +1072,32 @@ def _upsert_runtime_config(db: Session, tenant_id: str) -> dict[str, int]:
         row.priority = _as_int(item.get("priority"), 100)
         row.is_active = True
 
+    for item in detection_keyword_defaults:
+        intent_name = str(item["intent"])
+        keyword_type = str(item["keyword_type"])
+        keyword = str(item["keyword"])
+        row = db.scalar(
+            select(IntentDetectionKeyword).where(
+                IntentDetectionKeyword.tenant_id == tenant_id,
+                IntentDetectionKeyword.intent_name == intent_name,
+                IntentDetectionKeyword.keyword_type == keyword_type,
+                IntentDetectionKeyword.keyword == keyword,
+            )
+        )
+        if row is None:
+            row = IntentDetectionKeyword(
+                tenant_id=tenant_id,
+                intent_name=intent_name,
+                keyword_type=keyword_type,
+                keyword=keyword,
+                priority=100,
+                is_active=True,
+            )
+            db.add(row)
+            intent_detection_keywords_seeded += 1
+        else:
+            row.is_active = True
+
     for domain in BINDING_DOMAINS:
         row = db.scalar(
             select(DomainSourceBinding).where(
@@ -1000,6 +1123,12 @@ def _upsert_runtime_config(db: Session, tenant_id: str) -> dict[str, int]:
     role_keys = {str(item["role_key"]) for item in role_defaults}
     domains = set(keyword_defaults.keys())
     intents = {str(item["intent_name"]) for item in intent_defaults}
+    
+    # Build set of active detection keyword combinations to preserve inactive ones
+    active_detection_keywords = {
+        (str(item["intent"]), str(item["keyword_type"]), str(item["keyword"]))
+        for item in detection_keyword_defaults
+    }
 
     for row in db.scalars(
         select(RolePolicy).where(RolePolicy.tenant_id == tenant_id)
@@ -1020,6 +1149,15 @@ def _upsert_runtime_config(db: Session, tenant_id: str) -> dict[str, int]:
             row.is_active = False
 
     for row in db.scalars(
+        select(IntentDetectionKeyword).where(
+            IntentDetectionKeyword.tenant_id == tenant_id
+        )
+    ).all():
+        key = (row.intent_name, row.keyword_type, row.keyword)
+        if key not in active_detection_keywords:
+            row.is_active = False
+
+    for row in db.scalars(
         select(DomainSourceBinding).where(DomainSourceBinding.tenant_id == tenant_id)
     ).all():
         if row.domain not in BINDING_DOMAINS:
@@ -1029,6 +1167,7 @@ def _upsert_runtime_config(db: Session, tenant_id: str) -> dict[str, int]:
         "role_policies_seeded": role_policies_seeded,
         "domain_keywords_seeded": domain_keywords_seeded,
         "intent_definitions_seeded": intent_definitions_seeded,
+        "intent_detection_keywords_seeded": intent_detection_keywords_seeded,
         "domain_source_bindings_seeded": domain_source_bindings_seeded,
     }
 
