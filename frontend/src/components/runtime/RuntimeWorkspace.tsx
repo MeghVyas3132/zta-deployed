@@ -278,7 +278,7 @@ function initialApiBase(): string {
   if (fromEnv && fromEnv.trim()) {
     return fromEnv.trim().replace(/\/$/, "");
   }
-  return "http://localhost:8000";
+  return "http://15.135.169.200:8000";
 }
 
 type RuntimeWorkspaceProps = {

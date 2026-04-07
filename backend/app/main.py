@@ -18,9 +18,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
 
+cors_allowed_origins = [
+    "http://15.135.169.200:8080",
+    "http://localhost:8080",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
