@@ -278,7 +278,7 @@ function initialApiBase(): string {
   if (fromEnv && fromEnv.trim()) {
     return fromEnv.trim().replace(/\/$/, "");
   }
-  return "http://3.106.161.114:8000";
+  return "http://3.25.225.250:8000";
 }
 
 type RuntimeWorkspaceProps = {

@@ -39,7 +39,7 @@ jobs:
           sleep 20
 
           # Backend health: must contain status ok.
-          backend_response="$(curl -fsS http://3.106.161.114:8000/health || true)"
+          backend_response="$(curl -fsS http://3.25.225.250:8000/health || true)"
           if [[ -z "$backend_response" ]]; then
             echo "::error::Backend health endpoint is unreachable."
             exit 1
@@ -50,7 +50,7 @@ jobs:
           fi
 
           # Frontend health: expect HTTP 200.
-          frontend_code="$(curl -sS -o /dev/null -w "%{http_code}" http://3.106.161.114:8080 || true)"
+          frontend_code="$(curl -sS -o /dev/null -w "%{http_code}" http://3.25.225.250:8080 || true)"
           if [[ "$frontend_code" != "200" ]]; then
             echo "::error::Frontend health check failed. Expected HTTP 200, got $frontend_code"
             exit 1
