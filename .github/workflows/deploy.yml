@@ -7,13 +7,13 @@ on:
       - Backend CI - FastAPI + Celery
     types:
       - completed
-    branches:
-      - ec2-main
+  # Allow manual trigger for debugging/emergency deploys.
+  workflow_dispatch:
 
 jobs:
   deploy:
-    # Run only for successful CI runs on ec2-main.
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'ec2-main' }}
+    # Auto deploy only after successful CI on ec2-main; allow manual runs too.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'ec2-main') }}
     runs-on: ubuntu-latest
 
     steps:
@@ -83,6 +83,6 @@ jobs:
           echo "## CD Deployment Succeeded" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Branch | ${{ github.event.workflow_run.head_branch }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Commit SHA | ${{ github.event.workflow_run.head_sha }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit SHA | ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Timestamp (UTC) | $timestamp |" >> "$GITHUB_STEP_SUMMARY"
