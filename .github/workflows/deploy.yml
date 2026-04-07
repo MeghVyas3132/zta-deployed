@@ -1,0 +1,88 @@
+name: CD Deploy to EC2
+
+on:
+  # Trigger only when the CI workflow completes.
+  workflow_run:
+    workflows:
+      - Backend CI - FastAPI + Celery
+    types:
+      - completed
+    branches:
+      - mayur22
+
+jobs:
+  deploy:
+    # Run only for successful CI runs on mayur22.
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'mayur22' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy latest mayur22 to EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            cd ~/ZTA-AI
+            git pull origin mayur22
+            docker-compose down
+            docker-compose up --build -d
+
+      - name: Health check after deploy
+        run: |
+          set -euo pipefail
+
+          # Give services time to boot before probing.
+          sleep 20
+
+          # Backend health: must contain status ok.
+          backend_response="$(curl -fsS http://3.106.161.114:8000/health || true)"
+          if [[ -z "$backend_response" ]]; then
+            echo "::error::Backend health endpoint is unreachable."
+            exit 1
+          fi
+          if ! echo "$backend_response" | grep -q '"status":"ok"'; then
+            echo "::error::Backend health check failed. Response: $backend_response"
+            exit 1
+          fi
+
+          # Frontend health: expect HTTP 200.
+          frontend_code="$(curl -sS -o /dev/null -w "%{http_code}" http://3.106.161.114:8080 || true)"
+          if [[ "$frontend_code" != "200" ]]; then
+            echo "::error::Frontend health check failed. Expected HTTP 200, got $frontend_code"
+            exit 1
+          fi
+
+      - name: Rollback on failure
+        if: failure()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            cd ~/ZTA-AI
+            git checkout HEAD~1
+            docker-compose up --build -d
+
+      - name: Mark deployment failure clearly
+        if: failure()
+        run: |
+          echo "::error::Deployment health checks failed. Rollback executed on EC2."
+          exit 1
+
+      - name: Write deployment summary
+        if: success()
+        run: |
+          timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          echo "## CD Deployment Succeeded" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | ${{ github.event.workflow_run.head_branch }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit SHA | ${{ github.event.workflow_run.head_sha }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Timestamp (UTC) | $timestamp |" >> "$GITHUB_STEP_SUMMARY"
