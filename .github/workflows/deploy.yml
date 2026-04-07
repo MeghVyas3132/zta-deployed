@@ -8,16 +8,16 @@ on:
     types:
       - completed
     branches:
-      - mayur22
+      - ec2-main
 
 jobs:
   deploy:
-    # Run only for successful CI runs on mayur22.
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'mayur22' }}
+    # Run only for successful CI runs on ec2-main.
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'ec2-main' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy latest mayur22 to EC2
+      - name: Deploy latest ec2-main to EC2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -27,7 +27,7 @@ jobs:
           script: |
             set -e
             cd ~/ZTA-AI
-            git pull origin mayur22
+            git pull origin ec2-main
             docker-compose down
             docker-compose up --build -d
 
